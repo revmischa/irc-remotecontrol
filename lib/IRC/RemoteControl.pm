@@ -328,7 +328,7 @@ IRC::RemoteControl - Simple daemon for proxying irc connections
 
     my @ips;
     for my $i (131 .. 226) {
-    	push @ips, "204.188.208.$i";
+    	push @ips, "123.45.67.$i";
     }
 
     my $rc = new IRC::RemoteControl(

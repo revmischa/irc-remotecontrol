@@ -54,7 +54,7 @@ has 'ip_use_limit' => (
 has 'repeat_count' => (
     is => 'rw',
     isa => 'Int',
-    default => sub { 5 },
+    default => sub { 20 },
 );
 
 # ips available to bind to
@@ -135,6 +135,7 @@ sub handle_command {
         }
     } elsif ($cmd =~ m/^stop/i) {
         $self->clients([]);
+        return $h->push_write("Dereferencing connection handles...\n");
     } else {
         return $h->push_write("Unknown command '$cmd'. Available commands: spam, mass-spam, stop\n");
     }
@@ -274,6 +275,8 @@ sub gen_nick {
         $nick .= $word;
     }
 
+    $nick = substr($nick, 0, 8); # symbols max
+
     return $nick;
 }
 
@@ -323,6 +326,7 @@ IRC::RemoteControl - Simple daemon for proxying irc connections
 
     use IRC::RemoteControl;
     use AnyEvent;
+    use List::Util qw/shuffle/;
 
     my $main = AnyEvent->condvar;
 
@@ -330,6 +334,7 @@ IRC::RemoteControl - Simple daemon for proxying irc connections
     for my $i (131 .. 226) {
     	push @ips, "123.45.67.$i";
     }
+    @ips = shuffle @ips;
 
     my $rc = new IRC::RemoteControl(
         cv => $main,

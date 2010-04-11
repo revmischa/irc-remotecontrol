@@ -6,7 +6,14 @@ use AnyEvent::Socket;
 use AnyEvent::Handle;
 use List::Util qw/shuffle/;
 
+use IRC::RemoteControl::Proxy::SSH;
+
 our $VERSION = '0.01';
+
+# for testing SSH tunnel
+my $ssh_addr = "foo.com";
+my $ssh_user = "foo";
+my $ssh_pass = "foo";
 
 has clients => (
     is => 'rw',
@@ -158,6 +165,23 @@ sub mass_spam {
 sub spam {
     my ($self, $server, $chan, $text) = @_;
     
+    my $proxy = IRC::RemoteControl::Proxy::SSH->new(
+        proxy_address => $ssh_addr,
+        username => $ssh_user,
+        password => $ssh_pass,
+        dest_address => $server,
+    );
+    
+    if ($proxy->prepare) {
+        $self->connect($server, $chan, $text, $proxy);
+    } else {
+        $self->h->push_write("Proxy " . $proxy->description . " failed\n");
+    }
+}
+
+sub connect {
+    my ($self, $server, $chan, $text, $proxy) = @_;
+    
     my $h = $self->h;
     
     # pick an ip to bind to
@@ -182,27 +206,28 @@ sub spam {
     }
         
     my $con = new AnyEvent::IRC::Client::Pre;
+    my $viaproxy = $proxy ? " via proxy " . $proxy->description : '';
 
     $con->reg_cb(connect => sub {
         my ($con, $err) = @_;
         
         if (defined $err) {
-            $h->push_write("Error connecting to $server: $err\n");
+            $h->push_write("Error connecting to $server$viaproxy: $err\n");
             my @new_clients = grep { $_ != $con } @{$self->clients};
             $self->clients(\@new_clients);
             return;
         }
         
-        $h->push_write("Connected to $server\n");
+        $h->push_write("Connected to $server$viaproxy\n");
     });
     
     $con->reg_cb(registered => sub {
-        $h->push_write("Registered @ $server\n");
+        $h->push_write("Registered @ $server$viaproxy\n");
         $con->send_msg(JOIN => $chan);
     });
     
     $con->reg_cb(disconnect => sub {
-        $h->push_write("Disconnected from $server\n");
+        $h->push_write("Disconnected from $server$viaproxy\n");
         $self->used_ips->{$bind_ip}-- if $bind_ip;
         my @new_clients = grep { $_ != $con } @{$self->clients};
         $self->clients(\@new_clients);
@@ -239,7 +264,11 @@ sub spam {
 
     my $nick = $self->gen_nick;
     my $b = $bind_ip;
-    $con->connect($server, 6667, { nick => $nick, user => $nick, real => $nick }, sub {
+    
+    my $connect_addr = $proxy ? $proxy->proxy_connect_address : $server;
+    my $connect_port = $proxy ? $proxy->proxy_connect_port : 6667;
+    
+    $con->connect($connect_addr, $connect_port, { nick => $nick, user => $nick, real => $nick }, sub {
         my ($fh) = @_;
 
         if ($bind_ip) {
@@ -250,6 +279,7 @@ sub spam {
         return $self->connect_timeout;
     });
     
+    $con->{proxy} = $proxy;
     push @{$self->clients}, $con;
     return 1;
 }

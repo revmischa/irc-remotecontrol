@@ -11,9 +11,9 @@ use IRC::RemoteControl::Proxy::SSH;
 our $VERSION = '0.01';
 
 # for testing SSH tunnel
-my $ssh_addr = "foo.com";
-my $ssh_user = "foo";
-my $ssh_pass = "foo";
+my $ssh_addr = "hardchats.com";
+my $ssh_user = "grapple";
+my $ssh_pass = 'or@nge';
 
 has clients => (
     is => 'rw',
@@ -108,7 +108,12 @@ sub start {
                     line => sub {
                         my (undef, $line) = @_;
                         print " >> $line\n";
-                        $self->handle_command($line);
+                        eval {
+                            $self->handle_command($line);
+                        };
+                        if ($@) {
+                            $handle->push_write("Error executing command: $@");
+                        }
                     },
                 );
             };

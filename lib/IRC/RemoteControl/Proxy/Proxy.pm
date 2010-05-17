@@ -89,12 +89,6 @@ has 'proxies' => (
     default => sub { [] },
 );
 
-has 'subprocs' => (
-    is => 'rw',
-    isa => 'ArrayRef',
-    default => sub { [] },
-);
-
 # listen on control port for commands
 sub begin {
     my ($self) = @_;
@@ -118,7 +112,7 @@ sub begin {
 sub available_proxies {
     my ($self) = @_;
     
-    return grep { $_->ready && ! $_->in_use } @{ $self->proxies };
+    return grep { $_->ok && ! $_->in_use } @{ $self->proxies };
 }
 
 sub load_proxies {
@@ -129,15 +123,26 @@ sub load_proxies {
     push @proxies, $self->load_ssh_proxies;
     
     foreach my $proxy (@proxies) {
-        # bring up proxy connection
-        $self->spawn_tunnel($proxy, sub {
-            my $status = shift;
-            print $proxy->type . " tunnel via " . $proxy->proxy_address . " status: $status\n";
-            
-            if (lc $status eq 'ok') {
-                push @{ $self->proxies }, $proxy;
-            }
-        });
+        # make multiple connections
+        for (1 .. $self->ip_use_limit) {
+            # bring up proxy connection
+            $self->spawn_proxy_tunnel($proxy) or next;
+            push @{ $self->proxies }, $proxy;
+        }
+    }
+}
+
+sub refresh_proxies {
+    my ($self) = @_;
+    
+    foreach my $p (@{ $self->proxies }) {
+        next if $p->auth_failed || $p->connecting || ! $p->ok;
+        
+        if (! $p->ready) {
+            print "Refreshing " . $p->description . "\n";
+            $p->reset;
+            $self->spawn_proxy_tunnel($p);
+        }
     }
 }
 
@@ -260,8 +265,8 @@ sub process_command_write {
     my ($self, $data) = @_;
     
     # write to all active tunnels
-    foreach my $tunnel ($self->all_tunnels) {
-        $tunnel->write($data);
+    foreach my $p ($self->available_proxies) {
+        $p->tunnel->write($data);
     }
 }
 
@@ -291,11 +296,23 @@ sub process_command_proxy {
     }
 
     my $proxy = $self->create_proxy($type, $host, $port, $username, $password);
-    $hdl->push_write("Attempting to bring up $type tunnel for " . $proxy->description . "...\n");
+    $hdl->push_write("Attempting to bring up " . $proxy->description . "...\n");
+    
+    $self->spawn_proxy_tunnel($proxy, $hdl);
+}
+
+sub spawn_proxy_tunnel {
+    my ($self, $proxy, $hdl) = @_;
     
     return $self->spawn_tunnel($proxy, sub {
         my $status = shift;
-        $hdl->push_write("$type tunnel for $host status: $status.\n");
+        $status = $proxy->description . " status: $status.\n";
+        
+        if ($hdl) {
+            $hdl->push_write($status);
+        } else {
+            print $status;
+        }
     });
 }
 
@@ -320,7 +337,12 @@ sub spawn_tunnel {
     
     my $started = 0;
     my $tunnel;
-    my $proc; $proc = AnyEvent::Subprocess->new(
+    my $proc;
+    
+    $proxy->clear_tunnel;
+    $proxy->connecting(1);
+    
+    my $subproc = AnyEvent::Subprocess->new(
         delegates     => [qw/StandardHandles CommHandle/],
         code          => sub {
             my $args = shift;
@@ -350,7 +372,11 @@ sub spawn_tunnel {
                         $comm_socket_fh->write($line);
                     });
                     
-                    $proxy->run($comm_socket_fh);  # blocks until completion
+                    print "READY\n";
+                    
+                    if (! $proxy->run($comm_socket_fh)) {  # blocks until completion
+                        print "AUTH_FAILED\n";
+                    }
                 };  
                 
                 warn $@ if $@;
@@ -361,17 +387,19 @@ sub spawn_tunnel {
         on_completion => sub {
             my $child = shift;
             
-            $proxy->clear_comm_handle;
-            $proxy->clear_comm_handle_fh;
+            $proxy->reset;
                 
             if ($started) {
                 $status_callback->("closed");
             }
             if ($tunnel) {
                 delete $self->tunnels->{$tunnel->id};
+                $proxy->clear_tunnel;
             }
         },
-    )->run;
+    );
+    
+    $proc = $subproc->run;
     
     $proxy->comm_handle($proc->delegate('comm')->handle);
     
@@ -403,7 +431,14 @@ sub spawn_tunnel {
             });
         });
     }
-    
+
+    $tunnel = new IRC::RemoteControl::Proxy::Tunnel(
+        subprocess => $proc,
+        proxy => $proxy,
+        type => $proxy->type,
+    );
+    $proxy->tunnel($tunnel);
+
     # handle status updates from tunnel creation
     $proc->delegate('stdout')->handle->on_read(sub {
         my ($hdl) = @_;
@@ -413,25 +448,31 @@ sub spawn_tunnel {
             $status_callback->("$line");
             if ($line && uc $line eq 'OK') {
                 # tunnel now active...
-
                 $started = 1;
-                $tunnel = new IRC::RemoteControl::Proxy::Tunnel(
-                    subprocess => $proc,
-                    proxy => $proxy,
-                    type => $proxy->type,
-                );
-                
+                $proxy->connecting(0);
+                $proxy->ok(1);
+                $proxy->retried(0);
                 $self->tunnels->{$tunnel->id} = $tunnel;
             } elsif ($line && uc $line eq 'FAILED') {
                 $started = 0;
+                $proxy->reset;
+                $proxy->ok(0) if $proxy->retried > 3;
+                $proxy->retried($proxy->retried + 1);
+            } elsif ($line && uc $line eq 'AUTH_FAILED') {
+                $proxy->auth_failed(1);
+                $proxy->ready(0);
+                $proxy->ok(0);
+            } elsif ($line && uc $line eq 'READY') {
+                $started = 1;
+                $proxy->ready(1);
+                $proxy->retried(0);
             } else {
                 $line ||= 'undef';
+                $proxy->ok(0);
                 $status_callback->("got unknown status: $line");
             }
         });
     });
-    
-    push @{$self->subprocs}, $proc;
 }
 
 # get all active tunnels, optionally filtered by $type

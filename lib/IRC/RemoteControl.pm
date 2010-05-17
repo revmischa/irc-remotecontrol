@@ -104,6 +104,11 @@ has 'cv' => (
     is => 'rw',
 );
 
+has 'proxy_refresh_timer' => (
+    is => 'rw',
+    clearer => 'clear_proxy_refresh_timer',
+);
+
 # control socket
 has 'listen_server' => (
     is => 'rw',
@@ -121,7 +126,7 @@ has 'used_ips' => (
 has 'proxy_proxy' => (
     is => 'rw',
     isa => 'IRC::RemoteControl::Proxy::Proxy',
-    handles => [qw/proxies available_proxies/],
+    handles => [qw/proxies available_proxies refresh_proxies/],
 );
 
 
@@ -182,11 +187,19 @@ sub load_proxies {
     my $pp = IRC::RemoteControl::Proxy::Proxy->new(
         target_address => $self->target_address,
         target_port    => $self->target_port,
-        ip_use_limit   => $self->ip_use_limit,
+        # ip_use_limit   => $self->ip_use_limit,
     );
     
     $pp->load_proxies;
     $self->proxy_proxy($pp);
+    
+    # periodically refresh proxies
+    my $w = AnyEvent->timer (
+        after    => 5,
+        interval => 2,
+        cb       => sub { $self->refresh_proxies },
+    );
+    $self->proxy_refresh_timer($w);
 }
 
 sub handle_command {
@@ -217,12 +230,26 @@ sub handle_command {
             return $h->push_write("Dereferencing connection handles...\n");
         }
         
+        when (/^list( all)?/i) {
+            my @proxies = $1 ? @{ $self->proxies } : $self->available_proxies;
+            
+            foreach my $p (@proxies) {
+                my $active;
+                $active = $p->ok && $p->ready ? "Active" : "Inactive";
+                
+                $h->push_write("$active proxy: " . $p->description . "\n");
+            }
+        }
+        
         when (/^write (.+)/) {
             $self->proxy_proxy->process_command_write($1);
         }
         
         default {
-            return $h->push_write("Unknown command '$cmd'. Available commands: spam, mass-spam, stop\n");
+            break unless $cmd;
+            
+            return $h->push_write("Unknown command '$cmd'. " .
+                "Available commands: spam, mass-spam, list, list all, stop\n");
         }
     }
 }
@@ -230,7 +257,7 @@ sub handle_command {
 sub get_random_proxy {
     my ($self) = @_;
     
-    return (shuffle @{ $self->available_proxies })[0];
+    return (shuffle $self->available_proxies)[0];
 }
 
 sub mass_spam {
@@ -250,7 +277,7 @@ sub mass_spam {
 sub spam {
     my ($self, $chan, $text) = @_;
     
-    my $proxy = $self->get_random_proxy or return;
+    my $proxy = $self->get_random_proxy;
     return $self->connect($chan, $text, $proxy);
 }
 
@@ -266,6 +293,8 @@ sub connect {
                 
     my $con = $proxy ? AnyEvent::IRC::Client::Proxy->new : AnyEvent::IRC::Client::Pre->new;
     my $viaproxy = $proxy ? " via proxy " . $proxy->description : '';
+
+    my $bind_ip;
 
     $con->reg_cb(connect => sub {
         my ($con, $err) = @_;
@@ -287,6 +316,8 @@ sub connect {
     
     $con->reg_cb(disconnect => sub {
         $h->push_write("Disconnected from " . $self->target_address . "$viaproxy\n");
+        $proxy->reset if $proxy;
+        
         $self->used_ips->{$bind_ip}-- if $bind_ip;
         my @new_clients = grep { $_ != $con } @{$self->clients};
         $self->clients(\@new_clients);
@@ -329,7 +360,6 @@ sub connect {
         $con->proxy_connect($proxy, $self->debug, $nick, $user, $real);
     } else {
         # pick an ip to bind to
-        my $bind_ip = undef;
         if ($self->available_ips) {
             my $passes;
             LIMIT: foreach my $pass (1 .. $self->ip_use_limit) {
@@ -370,8 +400,6 @@ sub connect {
     return 1;
 }
 
-
-
 no Moose;
 __PACKAGE__->meta->make_immutable;
 
@@ -394,7 +422,7 @@ sub proxy_connect {
     }
     
     if ($proxy->in_use) {
-        $self->event(connect => "No proxy or communication handle found, aborting proxy_connect()");
+        $self->event(connect => "Proxy is in use");
         return;
     }
 
@@ -409,6 +437,8 @@ sub proxy_connect {
     
     $self->{socket} = $proxy->comm_handle;
     $proxy->comm_handle->on_read(sub {
+        return unless $proxy->comm_handle;
+        
         $proxy->comm_handle->push_read(line => sub {
             my ($h, $line) = @_;
             

@@ -1,13 +1,15 @@
 irc-remotecontrol.pl
 lib/IRC/RemoteControl.pm
 lib/IRC/RemoteControl/Proxy.pm
+lib/IRC/RemoteControl/Proxy/Consumer.pm
 lib/IRC/RemoteControl/Proxy/Proxy.pm
+lib/IRC/RemoteControl/Proxy/SOCKS.pm
 lib/IRC/RemoteControl/Proxy/SSH.pm
 lib/IRC/RemoteControl/Proxy/Tunnel.pm
 lib/IRC/RemoteControl/Util.pm
 MANIFEST
 MANIFEST.SKIP
-proxy-proxy.pl
 README
 ssh-proxies.txt
+ssh-proxies.txt.example
 t/IRC-RemoteControl.t

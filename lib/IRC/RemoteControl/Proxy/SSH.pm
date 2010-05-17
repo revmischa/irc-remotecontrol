@@ -26,7 +26,7 @@ has '_ssh' => (
     predicate => 'has_ssh_client',
     clearer => 'clear_ssh_client',
     builder => 'build_ssh_client',
-    lazy => 1,
+    lazy => 0,
 );
 
 has 'channel' => (
@@ -86,6 +86,8 @@ around 'prepare' => sub {
     my $ok;
 
     $ok = eval {
+        return unless $ssh;
+        
         $ssh->connect($self->proxy_address, $self->proxy_port, Timeout => $self->timeout) or die $!;
         
         # should add key auth filenames here if needed
@@ -128,7 +130,7 @@ sub create_channel {
     return $channel;
 }
 
-# run forever
+# run until EOF
 sub run {
     my ($self, $sock) = @_;
     

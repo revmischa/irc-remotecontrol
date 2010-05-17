@@ -10,8 +10,16 @@ WriteMakefile(
         'Moose' => 0,
         
         'AnyEvent::IRC::Client' => 0,
+        'AnyEvent::IRC' => 0,
         'AnyEvent::Socket' => 0,
         'MooseX:Getopt' => 0,  
+        'Getopt::Long::Descriptive' => 0,
+        'Net::SSH2' => 0,
+        'namespace::autoclean' => 0,
+        'AnyEvent::Subprocess' => 0,
+        'Socket' => 0,
+        'WWW::FreeProxyListsCom' => 0,
+        'IO::Socket::Socks' => 0,
     },
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/IRC/RemoteControl.pm', # retrieve abstract from module

@@ -3,6 +3,8 @@ package IRC::RemoteControl::Proxy;
 use Moose::Role;
 use namespace::autoclean;
 
+use IO::Select;
+
 has 'proxy_address' => (
     is => 'rw',
     isa => 'Str',
@@ -40,8 +42,15 @@ has 'password' => (
 
 has 'timeout' => (
     is => 'rw',
+    isa => 'Int',
     default => 8,
 );
+
+has 'poll_timeout' => (
+    is => 'rw',
+    default => 0.25,
+);
+
 
 # # #
 
@@ -106,6 +115,7 @@ has 'tunnel' => (
 
 
 requires 'write';
+requires 'run';
 
 
 sub kill_tunnel {
@@ -130,7 +140,53 @@ sub reset {
 }
 
 sub prepare {}
-sub run {}
+
+# run until EOF
+sub run_select_loop {
+    my ($self, $comm_sock, $proxy_sock) = @_;
+    
+    my $s = IO::Select->new($proxy_sock, $comm_sock);
+    
+    my $read_buf = '';
+    
+    while (my @ready = $s->can_read($self->poll_timeout)) {
+        foreach my $fh (@ready) {
+            if ($fh == $proxy_sock) {
+                # data on proxy
+                my $buf;
+                $fh->read($buf, 512);
+                $read_buf .= $buf;
+                
+                # find lines
+                my @lines;
+                READLINES: while (1) {
+                    my $eol_idx = index($read_buf, "\r\n");
+                    if ($eol_idx != -1) {
+                        my $line = substr($read_buf, 0, $eol_idx, '');
+                        push @lines, $line;
+                    } else {
+                        last READLINES;
+                    }
+                }
+                
+                if ($self->on_read) {
+                    $self->on_read->($_) foreach @lines;
+                } else {
+                    print $_ foreach @lines;
+                }
+            } elsif ($fh == $comm_sock) {
+                # data from poarent process we need to write to proxy
+                my $buf;
+                if (my $r = $proxy_sock->read($buf, 512)) {
+                    $comm_sock->write($buf);
+                }
+            }
+        }
+    }
+    
+    $self->reset;
+    return 1;
+}
 
 sub proxy_connect_address {
     my ($self) = @_;

@@ -1,0 +1,7 @@
+^\.build
+\.bak$
+^blib/
+\.svn
+^Makefile
+^MANIFEST.bak
+^proxy-proxy

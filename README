@@ -3,6 +3,23 @@ IRC-RemoteControl version 0.01
 
 Fight CPAN censorship! Support backpan!
 
+
+Prereqs: run perl Makefile.PL or read Makefile.PL for prerequisite perl modules
+You may need libssh2-1-dev
+
+
+Usage:
+  # normal usage
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net
+  
+  # SSH tunnels only
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH
+
+  # load SOCKS proxies
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies
+
+
+
 INSTALLATION
 
 To install this module type the following:
@@ -12,7 +29,7 @@ To install this module type the following:
    make test
    make install
 
-COPYRIGHT AND LICENCE
+COPYRIGHT AND LICENSE
 
 Copyright (C) 2010 by the GNAA
 

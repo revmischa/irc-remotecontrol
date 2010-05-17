@@ -5,11 +5,13 @@
 package IRC::RemoteControl::Proxy::Proxy;
 
 use Moose;
+with 'MooseX::Getopt';
+with 'IRC::RemoteControl::Proxy::Consumer';
 
 use namespace::autoclean;
-use Data::Dumper;
 
 use IRC::RemoteControl::Proxy::SSH;
+use IRC::RemoteControl::Proxy::Socks;
 use IRC::RemoteControl::Proxy::Tunnel;
 use IRC::RemoteControl::Util;
 
@@ -21,7 +23,6 @@ use Socket;
 # requires 5.10
 use 5.010_000;
 use feature "switch";
-
 
 has 'target_address' => (
     is => 'rw',
@@ -39,8 +40,6 @@ has 'ip_use_limit' => (
     isa => 'Int',
     default => sub { 1 },
 );
-
-
 
 # raw client (experimental)
 has 'raw' => (
@@ -120,9 +119,21 @@ sub load_proxies {
     
     my @proxies;
 
-    push @proxies, $self->load_ssh_proxies;
+    foreach my $proxy_type (@{ $self->proxy_types }) {
+        given (lc $proxy_type) {
+            when ('socks') {
+                push @proxies, $self->load_socks_proxies;
+            }
+            
+            when ('ssh') {
+                push @proxies, $self->load_ssh_proxies;
+            }
+        }
+    }
     
     foreach my $proxy (@proxies) {
+        print "Loaded " . $proxy->description . "\n";
+        
         # make multiple connections
         for (1 .. $self->ip_use_limit) {
             # bring up proxy connection
@@ -146,10 +157,53 @@ sub refresh_proxies {
     }
 }
 
+sub fetch_proxies {
+    my ($self, $type) = @_;
+    
+    unless (eval "use WWW::FreeProxyListsCom; 1;") {
+        warn "WWW::FreeProxyListsCom is not installed, not fetching proxies\n";
+        return ();
+    }
+    
+    my $fetcher = WWW::FreeProxyListsCom->new;
+    my $proxies = $fetcher->get_list(type => lc $type, max_pages => 3);
+    unless ($proxies) {
+        warn "Error fetching proxies: " . $fetcher->error . "\n";
+        return ();
+    }
+    
+    my @ret;
+    foreach my $proxy (@$proxies) {
+        my $ip = $proxy->{ip} or next;
+        next unless $ip =~ /^\d+\.\d+\.\d+\.\d+/;
+        my $p = $self->create_proxy($type, $ip, $proxy->{port});
+        push @ret, $p;
+    }
+
+    return @ret;
+}
+
+sub load_socks_proxies {
+    my ($self) = @_;
+    
+    my @proxies;
+    
+    push @proxies, $self->load_proxies_from_file('Socks');
+    push @proxies, $self->fetch_proxies('Socks') if $self->fetch_socks_proxies;
+    
+    return @proxies;
+}
+
 sub load_ssh_proxies {
     my ($self) = @_;
     
-    my @list = $self->load_file('ssh-proxies.txt');
+    return $self->load_proxies_from_file('SSH');
+}
+
+sub load_proxies_from_file {
+    my ($self, $type) = @_;
+    
+    my @list = $self->load_file(lc $type . '-proxies.txt') or return ();
     
     my @proxies;
     foreach my $line (@list) {
@@ -160,12 +214,12 @@ sub load_ssh_proxies {
         my ($host, $port) = AnyEvent::Socket::parse_hostport($hostport);
         
         unless ($host) {
-            warn "Failed to load SSH proxy $hostport - format must be host:port\n";
+            warn "Failed to load $type proxy $hostport - format must be host:port\n";
             next;
         }
         
-        my $proxy = $self->create_proxy('SSH', $host, $port, $username, $password);
-        push @proxies, $proxy;
+        my $proxy = $self->create_proxy($type, $host, $port, $username, $password);
+        push @proxies, $proxy if $proxy;
     }
     
     return @proxies;
@@ -322,6 +376,7 @@ sub create_proxy {
     my %opts = (
         proxy_address => $host,
         dest_address => $self->target_address,
+        type => $type,
     );
     $opts{proxy_port} = $port if defined $port;
     $opts{username} = $username if defined $username;

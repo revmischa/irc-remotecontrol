@@ -6,6 +6,7 @@ use feature "switch";
 
 use Moose;
 with 'MooseX::Getopt';
+with 'IRC::RemoteControl::Proxy::Consumer';
 
 use AnyEvent;
 use AnyEvent::Socket;
@@ -17,29 +18,6 @@ use IRC::RemoteControl::Proxy::Proxy;
 use IRC::RemoteControl::Util;
 
 our $VERSION = '0.02';
-
-
-# REQUIRED: target network
-
-has 'target_address' => (
-    is => 'rw',
-    isa => 'Str',
-    required => 1,
-);
-
-has 'target_port' => (
-    is => 'rw',
-    isa => 'Int',
-    default => 6667,
-);
-
-
-# OPTIONAL
-
-has 'debug' => (
-    is => 'rw',
-    isa => 'Bool',
-);
 
 # proxy required to connect
 has 'require_proxy' => (
@@ -184,9 +162,9 @@ sub start {
 sub load_proxies {
     my ($self) = @_;
     
-    my $pp = IRC::RemoteControl::Proxy::Proxy->new(
-        target_address => $self->target_address,
-        target_port    => $self->target_port,
+    my $pp = IRC::RemoteControl::Proxy::Proxy->new_with_options(
+        target_address      => $self->target_address,
+        target_port         => $self->target_port,
         # ip_use_limit   => $self->ip_use_limit,
     );
     

@@ -1,36 +1,50 @@
 package IRC::RemoteControl;
 
+# requires 5.10
+use 5.010_000;
+use feature "switch";
+
 use Moose;
+with 'MooseX::Getopt';
+
 use AnyEvent;
 use AnyEvent::Socket;
 use AnyEvent::Handle;
+use AnyEvent::IRC;
 use List::Util qw/shuffle/;
 
-use IRC::RemoteControl::Proxy::SSH;
+use IRC::RemoteControl::Proxy::Proxy;
+use IRC::RemoteControl::Util;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-# for testing SSH tunnel
-my $ssh_addr = "hardchats.com";
-my $ssh_user = "grapple";
-my $ssh_pass = 'or@nge';
 
-has clients => (
+# REQUIRED: target network
+
+has 'target_address' => (
     is => 'rw',
-    isa => 'ArrayRef',
-    default => sub { [] },
+    isa => 'Str',
+    required => 1,
 );
 
-has 'server_handle' => (
+has 'target_port' => (
     is => 'rw',
+    isa => 'Int',
+    default => 6667,
 );
 
-has 'cv' => (
+
+# OPTIONAL
+
+has 'debug' => (
     is => 'rw',
+    isa => 'Bool',
 );
 
-has 'listen_server' => (
+# proxy required to connect
+has 'require_proxy' => (
     is => 'rw',
+    isa => 'Bool',
 );
 
 has 'connect_timeout' => (
@@ -61,7 +75,7 @@ has 'ip_use_limit' => (
 has 'repeat_count' => (
     is => 'rw',
     isa => 'Int',
-    default => sub { 20 },
+    default => sub { 1 },
 );
 
 # ips available to bind to
@@ -70,12 +84,46 @@ has 'available_ips' => (
     isa => 'ArrayRef',
 );
 
+
+# INTERNAL
+
+# control socket clients
+has clients => ( 
+    is => 'rw',
+    isa => 'ArrayRef',
+    default => sub { [] },
+);
+
+# control socket handle
+has 'server_handle' => (
+    is => 'rw',
+);
+
+# main loop
+has 'cv' => (
+    is => 'rw',
+);
+
+# control socket
+has 'listen_server' => (
+    is => 'rw',
+);
+
 # map of ip -> client_count
 has 'used_ips' => (
     is => 'rw',
     isa => 'HashRef',
     default => sub { {} },
 );
+
+# proxy-proxy, a proxy manager responsible for 
+# bringing up tunnels and verifying proxies
+has 'proxy_proxy' => (
+    is => 'rw',
+    isa => 'IRC::RemoteControl::Proxy::Proxy',
+    handles => [qw/proxies available_proxies/],
+);
+
 
 *h = \&server_handle;
 
@@ -123,8 +171,22 @@ sub start {
     } or die $!;
     
     print "Listening on $bind_ip:$bind_port\n";
-    
     $self->listen_server($server);
+    
+    $self->load_proxies;
+}
+
+sub load_proxies {
+    my ($self) = @_;
+    
+    my $pp = IRC::RemoteControl::Proxy::Proxy->new(
+        target_address => $self->target_address,
+        target_port    => $self->target_port,
+        ip_use_limit   => $self->ip_use_limit,
+    );
+    
+    $pp->load_proxies;
+    $self->proxy_proxy($pp);
 }
 
 sub handle_command {
@@ -132,107 +194,99 @@ sub handle_command {
     
     my $h = $self->h;
     
-    $cmd =~ s/^\s*//;
+    # strip whitespace
+    $cmd =~ s/^(\s+)//;
+    $cmd =~ s/(\s+)$//;
     
-    if ($cmd =~ m/^(mass-)?spam(?: (\S+)\s+(#\S+)\s+(.+))/i) {
-        my ($mass, $server, $chan, $text) = ($1, $2, $3, $4);
-        unless ($server && $chan && $text) {
-            return $h->push_write("Usage: spam irc.he.net #anxious MAN IN A DRESS HERE\n");
+    given ($cmd) {
+        when (/^(mass-)?spam(?:\s+(#\S+)\s+(.+))/i) {
+            my ($mass, $chan, $text) = ($1, $2, $3);
+            unless ($chan && $text) {
+                return $h->push_write("Usage: spam #anxious MAN IN A DRESS HERE\n");
+            }
+        
+            if ($mass) {
+                $self->mass_spam($chan, $text);
+            } else {
+                $self->spam($chan, $text);
+            }
         }
         
-        if ($mass) {
-            $self->mass_spam($server, $chan, $text);
-        } else {
-            $self->spam($server, $chan, $text);
+        when (/^stop/i) {
+            $self->clients([]);
+            return $h->push_write("Dereferencing connection handles...\n");
         }
-    } elsif ($cmd =~ m/^stop/i) {
-        $self->clients([]);
-        return $h->push_write("Dereferencing connection handles...\n");
-    } else {
-        return $h->push_write("Unknown command '$cmd'. Available commands: spam, mass-spam, stop\n");
+        
+        when (/^write (.+)/) {
+            $self->proxy_proxy->process_command_write($1);
+        }
+        
+        default {
+            return $h->push_write("Unknown command '$cmd'. Available commands: spam, mass-spam, stop\n");
+        }
     }
 }
 
+sub get_random_proxy {
+    my ($self) = @_;
+    
+    return (shuffle @{ $self->available_proxies })[0];
+}
+
 sub mass_spam {
-    my ($self, $server, $chan, $text) = @_;
+    my ($self, $chan, $text) = @_;
     
-    unless ($self->available_ips) {
-        $self->h->push_write("ERROR: you cannot use mass-spam until you have configured a list of bindable IPs\n");
-        return;
-    }
+    # unless ($self->available_ips) {
+    #     $self->h->push_write("ERROR: you cannot use mass-spam until you have configured a list of bindable IPs\n");
+    #     return;
+    # }
     
-    while ($self->spam($server, $chan, $text)) {
-        $self->h->push_write("Connecting to $server\n");
+    while ($self->spam($chan, $text)) {
+        $self->h->push_write("Spamming $chan\n");
     }
 }
 
 # connect one bot and spam
 sub spam {
-    my ($self, $server, $chan, $text) = @_;
+    my ($self, $chan, $text) = @_;
     
-    my $proxy = IRC::RemoteControl::Proxy::SSH->new(
-        proxy_address => $ssh_addr,
-        username => $ssh_user,
-        password => $ssh_pass,
-        dest_address => $server,
-    );
-    
-    if ($proxy->prepare) {
-        $self->connect($server, $chan, $text, $proxy);
-    } else {
-        $self->h->push_write("Proxy " . $proxy->description . " failed\n");
-    }
+    my $proxy = $self->get_random_proxy or return;
+    return $self->connect($chan, $text, $proxy);
 }
 
 sub connect {
-    my ($self, $server, $chan, $text, $proxy) = @_;
+    my ($self, $chan, $text, $proxy) = @_;
     
     my $h = $self->h;
-    
-    # pick an ip to bind to
-    my $bind_ip = undef;
-    if ($self->available_ips) {
-        my $passes;
-        LIMIT: foreach my $pass (1 .. $self->ip_use_limit) {
-            foreach my $ip (@{$self->available_ips}) {
-                next if $self->used_ips->{$ip} && $self->used_ips->{$ip} >= $pass;
-                $bind_ip = $ip;
-                $self->used_ips->{$ip}++;
-                last LIMIT;
-            }
-            
-            $passes++;
-        }
-        
-        unless ($bind_ip) {
-            $h->push_write("Used up all available IPs $passes time" . ($passes == 1 ? '' : 's') . "\n");
-            return 0;
-        }
+
+    if (! $proxy && $self->require_proxy) {
+        $h->push_write("No active proxies found and require_proxy=1\n");
+        return;
     }
-        
-    my $con = new AnyEvent::IRC::Client::Pre;
+                
+    my $con = $proxy ? AnyEvent::IRC::Client::Proxy->new : AnyEvent::IRC::Client::Pre->new;
     my $viaproxy = $proxy ? " via proxy " . $proxy->description : '';
 
     $con->reg_cb(connect => sub {
         my ($con, $err) = @_;
         
         if (defined $err) {
-            $h->push_write("Error connecting to $server$viaproxy: $err\n");
+            $h->push_write("Error connecting to " . $self->target_address . "$viaproxy: $err\n");
             my @new_clients = grep { $_ != $con } @{$self->clients};
             $self->clients(\@new_clients);
             return;
         }
         
-        $h->push_write("Connected to $server$viaproxy\n");
+        $h->push_write("Connected to " . $self->target_address . "$viaproxy\n");
     });
     
     $con->reg_cb(registered => sub {
-        $h->push_write("Registered @ $server$viaproxy\n");
+        $h->push_write("Registered @ " . $self->target_address . "$viaproxy\n");
         $con->send_msg(JOIN => $chan);
     });
     
     $con->reg_cb(disconnect => sub {
-        $h->push_write("Disconnected from $server$viaproxy\n");
+        $h->push_write("Disconnected from " . $self->target_address . "$viaproxy\n");
         $self->used_ips->{$bind_ip}-- if $bind_ip;
         my @new_clients = grep { $_ != $con } @{$self->clients};
         $self->clients(\@new_clients);
@@ -247,7 +301,7 @@ sub connect {
     
     my $repeat_count = 1;
     
-    $con->reg_cb (
+    $con->reg_cb(
         sent => sub {
             my ($con) = @_;
 
@@ -267,59 +321,131 @@ sub connect {
         }
     );
 
-    my $nick = $self->gen_nick;
-    my $b = $bind_ip;
+    my $nick = IRC::RemoteControl::Util->gen_nick;
+    my $user = IRC::RemoteControl::Util->gen_user;
+    my $real = IRC::RemoteControl::Util->gen_real;
     
-    my $connect_addr = $proxy ? $proxy->proxy_connect_address : $server;
-    my $connect_port = $proxy ? $proxy->proxy_connect_port : 6667;
-    
-    $con->connect($connect_addr, $connect_port, { nick => $nick, user => $nick, real => $nick }, sub {
-        my ($fh) = @_;
-
-        if ($bind_ip) {
-            my $bind = AnyEvent::Socket::pack_sockaddr(undef, parse_address($bind_ip));
-            bind $fh, $bind;
-        }
+    if ($proxy) {
+        $con->proxy_connect($proxy, $self->debug, $nick, $user, $real);
+    } else {
+        # pick an ip to bind to
+        my $bind_ip = undef;
+        if ($self->available_ips) {
+            my $passes;
+            LIMIT: foreach my $pass (1 .. $self->ip_use_limit) {
+                foreach my $ip (@{$self->available_ips}) {
+                    next if $self->used_ips->{$ip} && $self->used_ips->{$ip} >= $pass;
+                    $bind_ip = $ip;
+                    $self->used_ips->{$ip}++;
+                    last LIMIT;
+                }
+            
+                $passes++;
+            }
         
-        return $self->connect_timeout;
-    });
+            unless ($bind_ip) {
+                $h->push_write("Used up all available IPs $passes time" . ($passes == 1 ? '' : 's') . "\n");
+                return 0;
+            }
+        }
+    
+        my $connect_addr = $self->target_address;
+        my $connect_port = $self->target_port;
+    
+        $con->connect($connect_addr, $connect_port, { nick => $nick, user => $user, real => $real }, sub {
+            my ($fh) = @_;
+    
+            if ($bind_ip) {
+                my $bind = AnyEvent::Socket::pack_sockaddr(undef, parse_address($bind_ip));
+                bind $fh, $bind;
+            }
+        
+            return $self->connect_timeout;
+        });
+    }
     
     $con->{proxy} = $proxy;
     push @{$self->clients}, $con;
+    
     return 1;
 }
 
-sub gen_nick {
-    # offensive words
-    my @words = qw/gouda gapp pump randi yahoo poop dongs anus goat peepee
-        blog mugu jenkem grids aids hiv crack gay hitler wpww jre msi
-        toot gas perl python php gapp gouda tron gouda tron gouda flouride
-        stock broker bull bear market gsax bond gold silver gold ivest
-        mkt hedge linden dsp asi grim flaccid jenk gas moot max lol nog
-        flooz stax spin hard rock yid monger spleen pre oro smack jim bob
-        mugabe spliff jay ngr lips skeet horse horsey crunk stunnas bleez
-        pump lyfe mop irc die death log fubu racewar rahowa nwo/;
-
-    my @wordlist = (shuffle @words)[0..int(rand(2) + 1)];
-
-    my $nick = '';
-
-    foreach my $word (@wordlist) {
-        $word = ucfirst $word if int(rand(10)) < 5;
-        $nick .= '_' if $nick && int(rand(10)) < 2;
-        $nick .= $word;
-    }
-
-    $nick = substr($nick, 0, 8); # symbols max
-
-    return $nick;
-}
 
 
 no Moose;
 __PACKAGE__->meta->make_immutable;
 
+
+# IRC client using an existing handle for communication
+# super ghetto hack below
+package AnyEvent::IRC::Client::Proxy;
+
+use strict;
+use warnings;
+
+use parent 'AnyEvent::IRC::Client';
+
+sub proxy_connect {
+    my ($self, $proxy, $debug, $nick, $user, $real) = @_;
+    
+    unless ($proxy && $proxy->comm_handle) {
+        $self->event(connect => "No proxy or communication handle found, aborting proxy_connect()");
+        return;
+    }
+    
+    if ($proxy->in_use) {
+        $self->event(connect => "No proxy or communication handle found, aborting proxy_connect()");
+        return;
+    }
+
+    if ($self->{socket}) {
+        $self->disconnect("reconnect requested.");
+    }
+    
+    $proxy->in_use(1);
+    
+    $self->{host} = $proxy->dest_address;
+    $self->{port} = $proxy->dest_port;
+    
+    $self->{socket} = $proxy->comm_handle;
+    $proxy->comm_handle->on_read(sub {
+        $proxy->comm_handle->push_read(line => sub {
+            my ($h, $line) = @_;
+            
+            if ($debug) {
+                print ">> $line\n";
+            }
+            
+            $self->_feed_irc_data($line);
+        });
+    });
+    
+    $proxy->comm_handle->on_drain(sub {
+        $self->event('buffer_empty');
+    });
+    
+    $self->{register_cb_guard} = $self->reg_cb(
+        ext_before_connect => sub {
+            my ($self, $err) = @_;
+
+            unless ($err) {
+                $self->register($nick, $user, $real);
+            }
+
+            delete $self->{register_cb_guard};
+        }
+    );
+    
+    $self->event('connect');
+}
+
+1;
+
+
+
+
 # silly hack to let us use a prebinding callback
+# i think they fixed it so this is no longer needed
 package AnyEvent::IRC::Client::Pre;
 
 use strict;
@@ -329,28 +455,30 @@ use AnyEvent::IRC::Connection;
 use parent 'AnyEvent::IRC::Client';
 
 sub connect {
-   my ($self, $host, $port, $info, $pre) = @_;
+    my ($self, $host, $port, $info, $pre) = @_;
 
-  if (defined $info) {
-     $self->{register_cb_guard} = $self->reg_cb (
-        ext_before_connect => sub {
-           my ($self, $err) = @_;
+    if (defined $info) {
+        $self->{register_cb_guard} = $self->reg_cb(
+            ext_before_connect => sub {
+                my ($self, $err) = @_;
 
-           unless ($err) {
-              $self->register(
-                 $info->{nick}, $info->{user}, $info->{real}, $info->{password}
-              );
-           }
+                unless ($err) {
+                    $self->register(
+                        $info->{nick}, $info->{user}, $info->{real}, $info->{password}
+                    );
+                }
 
-           delete $self->{register_cb_guard};
-        }
-     );
-  }
-  
-  AnyEvent::IRC::Connection::connect($self, $host, $port, $pre);
+                delete $self->{register_cb_guard};
+            }
+        );
+    }
+
+    AnyEvent::IRC::Connection::connect($self, $host, $port, $pre);
 }
 
 1;
+
+
 __END__
 
 =head1 NAME

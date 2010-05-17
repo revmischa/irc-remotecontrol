@@ -1,5 +1,13 @@
-Makefile.PL
-MANIFEST
-README
-t/IRC-RemoteControl.t
+irc-remotecontrol.pl
 lib/IRC/RemoteControl.pm
+lib/IRC/RemoteControl/Proxy.pm
+lib/IRC/RemoteControl/Proxy/Proxy.pm
+lib/IRC/RemoteControl/Proxy/SSH.pm
+lib/IRC/RemoteControl/Proxy/Tunnel.pm
+lib/IRC/RemoteControl/Util.pm
+MANIFEST
+MANIFEST.SKIP
+proxy-proxy.pl
+README
+ssh-proxies.txt
+t/IRC-RemoteControl.t

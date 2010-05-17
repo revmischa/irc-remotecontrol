@@ -8,7 +8,10 @@ WriteMakefile(
     PREREQ_PM         => {
         'AnyEvent' => 0,
         'Moose' => 0,
-        'AnyEvent::IRC::Client' => 0,  
+        
+        'AnyEvent::IRC::Client' => 0,
+        'AnyEvent::Socket' => 0,
+        'MooseX:Getopt' => 0,  
     },
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/IRC/RemoteControl.pm', # retrieve abstract from module

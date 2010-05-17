@@ -38,7 +38,42 @@ has 'password' => (
     required => 0,
 );
 
+has 'type' => (
+    is => 'ro',
+    isa => 'Str',
+    required => 1,
+);
+
+has 'on_read' => (
+    is => 'rw',
+    isa => 'CodeRef',
+);
+
+has 'ready' => (
+    is => 'rw',
+    isa => 'Bool',
+);
+
+has 'in_use' => (
+    is => 'rw',
+    isa => 'Bool',
+);
+
+has 'comm_handle' => (
+    is => 'rw',
+    clearer => 'clear_comm_handle',
+);
+
+has 'comm_handle_fh' => (
+    is => 'rw',
+    clearer => 'clear_comm_handle_fh',
+);
+
+
+requires 'write';
+
 sub prepare {}
+sub run {}
 
 sub proxy_connect_address {
     my ($self) = @_;

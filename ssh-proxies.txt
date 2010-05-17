@@ -1,0 +1,2 @@
+# format: host:port username pw
+# ssh.tunnel.com:22 LoRez letmein

@@ -32,7 +32,7 @@ has 'fetch_socks_proxies' => (
 has 'proxy_types' => (
     is => 'rw',
     isa => 'ArrayRef',
-    default => sub { [qw/Socks/] },
+    default => sub { [qw/SSH Socks/] },
 );
 
 1;

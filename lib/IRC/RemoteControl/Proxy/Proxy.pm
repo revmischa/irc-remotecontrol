@@ -431,7 +431,7 @@ sub spawn_tunnel {
                     print "READY\n";
                     
                     if (! $proxy->run($comm_socket_fh)) {  # blocks until completion
-                        print "AUTH_FAILED\n";
+                        print "ERROR\n";
                     }
                 };  
                 
@@ -509,6 +509,10 @@ sub spawn_tunnel {
                 $proxy->ok(1);
                 $proxy->retried(0);
                 $self->tunnels->{$tunnel->id} = $tunnel;
+            } elsif ($line && uc $line eq 'ERROR') {
+                $started = 0;
+                $proxy->reset;
+                $proxy->ok(0);
             } elsif ($line && uc $line eq 'FAILED') {
                 $started = 0;
                 $proxy->reset;

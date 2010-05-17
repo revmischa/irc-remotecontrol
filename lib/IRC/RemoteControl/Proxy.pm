@@ -156,7 +156,7 @@ sub run_select_loop {
                 my $buf;
                 $fh->read($buf, 512);
                 $read_buf .= $buf;
-                
+                                
                 # find lines
                 my @lines;
                 READLINES: while (1) {
@@ -180,6 +180,10 @@ sub run_select_loop {
                 if (my $r = $proxy_sock->read($buf, 512)) {
                     $comm_sock->write($buf);
                 }
+            } else {
+                # done?
+                $self->reset;
+                return 1;
             }
         }
     }

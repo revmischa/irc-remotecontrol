@@ -1,4 +1,4 @@
-package IRC::RemoteControl::Proxy::Socks;
+package IRC::RemoteControl::Proxy::SOCKS;
 
 use Moose;
 with 'IRC::RemoteControl::Proxy';

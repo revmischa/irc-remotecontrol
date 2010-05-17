@@ -383,6 +383,7 @@ sub create_proxy {
     $opts{password} = $password if defined $password;
     $opts{dest_port} = $self->target_port if defined $self->target_port;
     
+    eval "use IRC::RemoteControl::Proxy::$type; 1;" or die $@;
     my $proxy = "IRC::RemoteControl::Proxy::$type"->new(%opts);
     return $proxy;
 }

@@ -11,7 +11,7 @@ with 'IRC::RemoteControl::Proxy::Consumer';
 use namespace::autoclean;
 
 use IRC::RemoteControl::Proxy::SSH;
-use IRC::RemoteControl::Proxy::Socks;
+use IRC::RemoteControl::Proxy::SOCKS;
 use IRC::RemoteControl::Proxy::Tunnel;
 use IRC::RemoteControl::Util;
 
@@ -188,8 +188,8 @@ sub load_socks_proxies {
     
     my @proxies;
     
-    push @proxies, $self->load_proxies_from_file('Socks');
-    push @proxies, $self->fetch_proxies('Socks') if $self->fetch_socks_proxies;
+    push @proxies, $self->load_proxies_from_file('SOCKS');
+    push @proxies, $self->fetch_proxies('SOCKS') if $self->fetch_socks_proxies;
     
     return @proxies;
 }

@@ -63,6 +63,12 @@ has 'available_ips' => (
     default => sub { [] },
 );
 
+has 'tunnel_device' => (
+    is => 'rw',
+    isa => 'Str',
+    builder => 'build_tunnel_device',
+    lazy => 1,
+);
 
 # INTERNAL
 
@@ -213,6 +219,22 @@ sub load_available_ips {
     print "Loaded " . (scalar @ips) . " from $ips_file\n";
 }
 
+# default ipv6 tunnel device
+sub build_tunnel_device {
+    my ($self) = @_;
+
+    my $os = $self->get_os;
+    my $dev;
+
+    if ($os eq 'linux') {
+        $dev = 'he-ipv6';
+    } elsif ($os eq 'freebsd' || $os eq 'darwin') {
+        $dev = 'gif0';
+    }
+
+    return $dev;
+}
+
 sub generate_ipv6_list {
     my ($self) = @_;
     
@@ -224,7 +246,10 @@ sub generate_ipv6_list {
     if ($> > 0) {
         warn "You are not running as root but have requested IPv6 tunnels be created. This will probably fail.\n";
     }
-    
+
+    my $dev = $self->tunnel_device;
+    my $os = $self->get_os;
+
     foreach my $prefix (@$prefixes) {
     	for (my $j = 0; $j < $numips; $j++) {
     		my @prefwords =  split(':', $prefix);
@@ -242,11 +267,25 @@ sub generate_ipv6_list {
     		# bring up IP
     		 if ($> == 0) {
     		     # create tunnel if EUID == root
-    		     `ifconfig gif0 inet6 $ip6 alias`;
+                     if ($os eq 'linux') {
+                         `ip addr add $ip6 dev $dev`;  # linuxe
+                     } elsif ($os eq 'freebsd' || $os eq 'darwin') {
+                         `ifconfig $dev inet6 $ip6 alias`;  # bsd
+                     } else {
+                         warn "I don't know how to create ipv6 tunnels for $os";
+                     }
+
     		     push @{ $self->created_tunnels }, $ip6;
     		 }
     	}
     }
+}
+
+sub get_os {
+    my $os = `uname -s`;
+    chomp $os;
+    $os = lc $os;
+    return $os;
 }
 
 sub slurp {
@@ -476,7 +515,24 @@ sub DEMOLISH {
     # bring down created tunnels
     if ($self->created_tunnels && @{ $self->created_tunnels } && $> == 0) {
         # slow
-        `ifconfig gif0 inet6 $_ -alias` for @{ $self->created_tunnels };
+        my $os = $self->get_os;
+
+        my $command;
+        my $dev = $self->tunnel_device;
+        if ($os eq 'linux') {
+            $command = "ip addr del %s dev $dev";
+        } elsif ($os eq 'freebsd' || $os eq 'darwin') {
+            $command = "ifconfig $dev inet6 %s -alias";
+        }
+
+        if ($command) {
+            foreach my $ip (@{ $self->created_tunnels }) {
+                my $cmd = sprintf($command, $ip);
+                `$cmd`;
+            }
+        } else {
+            warn "Don't know how to bring down tunnels on $os";
+        }
         
         # faster, deletes everything though, hope you dont care!
         # doesn't work on osx

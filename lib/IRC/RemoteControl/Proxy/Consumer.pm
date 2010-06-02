@@ -35,4 +35,24 @@ has 'proxy_types' => (
     default => sub { [qw/SSH SOCKS/] },
 );
 
+has 'use_proxy' => (
+    is => 'rw',
+    isa => 'Int',
+    default => 1,
+);
+
+# available IPv6 prefixes
+has 'ipv6_prefixes' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    default => sub { [] },
+);
+
+# number of tunnels to create per-prefix
+has 'ipv6_tunnel_count' => (
+    is => 'rw',
+    isa => 'Int',
+    default => 100_000,
+);
+
 1;

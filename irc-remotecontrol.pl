@@ -8,8 +8,17 @@ use IRC::RemoteControl;
 use AnyEvent;
 use AnyEvent::Socket;
 
+my $cv = AnyEvent->condvar;
+
 my $rc = IRC::RemoteControl->new_with_options(require_proxy => 1);
+
+$SIG{INT} = sub {
+    warn "Shutting down...\n";
+    undef $rc;
+    $cv->send;
+};
+
 $rc->start;
 
-AnyEvent->condvar->recv; # main loop
+$cv->recv; # main loop
 

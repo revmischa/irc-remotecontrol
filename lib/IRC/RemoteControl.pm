@@ -60,6 +60,7 @@ has 'repeat_count' => (
 has 'available_ips' => (
     is => 'rw',
     isa => 'ArrayRef',
+    default => sub { [] },
 );
 
 
@@ -90,6 +91,13 @@ has 'proxy_refresh_timer' => (
 # control socket
 has 'listen_server' => (
     is => 'rw',
+);
+
+has 'created_tunnels' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    default => sub { [] },
+    lazy => 1,
 );
 
 # map of ip -> client_count
@@ -156,7 +164,12 @@ sub start {
     print "Listening on $bind_ip:$bind_port\n";
     $self->listen_server($server);
     
-    $self->load_proxies;
+    $self->load_available_ips;
+    $self->load_proxies if $self->use_proxy;
+    
+    if (@{ $self->ipv6_prefixes }) {
+        $self->generate_ipv6_list;
+    }
 }
 
 sub load_proxies {
@@ -178,6 +191,71 @@ sub load_proxies {
         cb       => sub { $self->refresh_proxies },
     );
     $self->proxy_refresh_timer($w);
+}
+
+sub load_available_ips {
+    my ($self) = @_;
+    
+    my $ips_file = "ips.txt";
+    return unless $ips_file;
+    
+    my @ips = $self->slurp($ips_file) or return;
+    $self->available_ips(\@ips);
+    
+    print "Loaded " . (scalar @ips) . " from $ips_file\n";
+}
+
+sub generate_ipv6_list {
+    my ($self) = @_;
+    
+    my $prefixes = $self->ipv6_prefixes;
+    my $numips = $self->ipv6_tunnel_count;
+    
+    return unless @$prefixes && $numips;
+    
+    if ($> > 0) {
+        warn "You are not running as root but have requested IPv6 tunnels be created. This will probably fail.\n";
+    }
+    
+    foreach my $prefix (@$prefixes) {
+    	for (my $j = 0; $j < $numips; $j++) {
+    		my @prefwords =  split(':', $prefix);
+    		for (my $i = $#prefwords + 1; $i < 8; $i++) {
+    			push(@prefwords, sprintf("%x",int(rand(hex("ffff")))))
+    		}
+    		
+    		my $ip6 = join(':', @prefwords);
+    		push @{ $self->available_ips }, $ip6;
+    		
+    		if ($self->debug) {
+    		    print "Generating tunnel IP $ip6\n";
+    		}
+    		
+    		# bring up IP
+    		 if ($> == 0) {
+    		     # create tunnel if EUID == root
+    		     `ifconfig gif0 inet6 $ip6 alias`;
+    		     push @{ $self->created_tunnels }, $ip6;
+    		 }
+    	}
+    }
+}
+
+sub slurp {
+    my ($self, $filename) = @_;
+    
+    return unless $filename && -e $filename;
+    
+    my $slurp;
+    my $fh;
+    open $fh, $filename or die $!;
+    {
+        local $/;
+        $slurp = <$fh>;
+    }
+    close $fh;
+    
+    return split(/\n/, $filename);
 }
 
 sub handle_command {
@@ -376,6 +454,21 @@ sub connect {
     push @{$self->clients}, $con;
     
     return 1;
+}
+
+sub DEMOLISH {
+    my ($self) = @_;
+        
+    # bring down created tunnels
+    if ($self->created_tunnels && @{ $self->created_tunnels } && $> == 0) {
+        # slow
+        `ifconfig gif0 inet6 $_ -alias` for @{ $self->created_tunnels };
+        
+        # faster, deletes everything though, hope you dont care!
+        # doesn't work on osx
+        # fix this plz
+        `ifconfig gif0 destroy`;
+    }
 }
 
 no Moose;

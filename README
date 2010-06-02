@@ -9,17 +9,40 @@ You may need libssh2-1-dev
 
 
 Usage:
+
   # normal usage
   $ ./irc-remotecontrol.pl --target_address irc.efnet.net
   
   # SSH tunnels only
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH 
 
   # load SOCKS proxies
   $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies
 
-  # create some ipv6 IPs and use those
-  $ sudo ./irc-remotecontrol.pl --target_address irc.homelien.no --use_proxy 0 --ipv6_prefixes 2001:470:80e1:ba21:: --ipv6_tunnel_count 20 --debug
+
+  # create 20 ipv6 tunnels and only use them
+
+  $ sudo ./irc-remotecontrol.pl 
+    --target_address irc.homelien.no
+    --use_proxy 0 
+    --ipv6_tunnel_count 20
+    --ipv6_prefixes 2001:470:80e1:ba21::
+    --tunnel_device he-tunnel
+    --debug
+
+
+  # load a specific set of personalities with the server on a
+    non-standard port on localhost
+
+  $ ./irc-remotecontrol.pl --target_address irc.freenode.net
+    --personalities Flood --personalities Foo
+    --server_bind_port 1025 --server_bind_ip 127.0.0.1
+
+
+You may specify a list of SSH tunnels in ssh-tunnels.txt, a list of
+SOCKS proxies in socks-proxies.txt and a list of available source IPs
+in ips.txt.
+
 
 INSTALLATION
 

@@ -71,31 +71,37 @@ has clients => (
     is => 'rw',
     isa => 'ArrayRef',
     default => sub { [] },
+    traits => [ 'NoGetopt' ],
 );
 
 # control socket handle
 has 'server_handle' => (
     is => 'rw',
+    traits => [ 'NoGetopt' ],
 );
 
 # main loop
 has 'cv' => (
     is => 'rw',
+    traits => [ 'NoGetopt' ],
 );
 
 has 'proxy_refresh_timer' => (
     is => 'rw',
     clearer => 'clear_proxy_refresh_timer',
+    traits => [ 'NoGetopt' ],
 );
 
 # control socket
 has 'listen_server' => (
     is => 'rw',
+    traits => [ 'NoGetopt' ],
 );
 
 has 'created_tunnels' => (
     is => 'rw',
     isa => 'ArrayRef',
+    traits => [ 'NoGetopt' ],
     default => sub { [] },
     lazy => 1,
 );
@@ -104,6 +110,7 @@ has 'created_tunnels' => (
 has 'used_ips' => (
     is => 'rw',
     isa => 'HashRef',
+    traits => [ 'NoGetopt' ],
     default => sub { {} },
 );
 
@@ -112,6 +119,7 @@ has 'used_ips' => (
 has 'proxy_proxy' => (
     is => 'rw',
     isa => 'IRC::RemoteControl::Proxy::Proxy',
+    traits => [ 'NoGetopt' ],
     handles => [qw/proxies available_proxies refresh_proxies/],
 );
 

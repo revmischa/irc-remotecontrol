@@ -18,7 +18,8 @@ Usage:
   # load SOCKS proxies
   $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies
 
-
+  # create some ipv6 IPs and use those
+  $ sudo ./irc-remotecontrol.pl --target_address irc.homelien.no --use_proxy 0 --ipv6_prefixes 2001:470:80e1:ba21:: --ipv6_tunnel_count 20 --debug
 
 INSTALLATION
 

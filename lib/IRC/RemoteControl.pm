@@ -17,7 +17,7 @@ use List::Util qw/shuffle/;
 use IRC::RemoteControl::Proxy::Proxy;
 use IRC::RemoteControl::Util;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # proxy required to connect
 has 'require_proxy' => (
@@ -295,7 +295,7 @@ sub handle_command {
         }
         
         when (/^list( all)?/i) {
-            my @proxies = $1 ? @{ $self->proxies } : $self->available_proxies;
+            my @proxies = $1 || ! $self->proxy_proxy ? @{ $self->proxies } : $self->available_proxies;
             
             foreach my $p (@proxies) {
                 my $active;
@@ -306,7 +306,11 @@ sub handle_command {
         }
         
         when (/^write (.+)/) {
-            $self->proxy_proxy->process_command_write($1);
+            if ($self->proxy_proxy) {
+                $self->proxy_proxy->process_command_write($1);
+            } else {
+                return $h->push_write("No proxies available to write to.\n");
+            }
         }
         
         default {
@@ -320,6 +324,8 @@ sub handle_command {
 
 sub get_random_proxy {
     my ($self) = @_;
+    
+    return unless $self->proxy_proxy && $self->available_proxies;
     
     return (shuffle $self->available_proxies)[0];
 }

@@ -481,7 +481,7 @@ sub DEMOLISH {
         # faster, deletes everything though, hope you dont care!
         # doesn't work on osx
         # fix this plz
-        `ifconfig gif0 destroy`;
+        #`ifconfig gif0 destroy`;
     }
 }
 

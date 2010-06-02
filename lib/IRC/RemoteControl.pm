@@ -350,7 +350,7 @@ sub connect {
     
     my $h = $self->h;
 
-    if (! $proxy && $self->require_proxy) {
+    if (! $proxy && $self->require_proxy && $self->use_proxy) {
         $h->push_write("No active proxies found and require_proxy=1\n");
         return;
     }

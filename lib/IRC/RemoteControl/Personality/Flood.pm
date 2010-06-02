@@ -5,12 +5,18 @@ package IRC::RemoteControl::Personality::Flood;
 use Moose::Role;
 use AnyEvent;
 
+has 'flood_text' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+);
+
 # register spam and mass-spam commands
 after 'setup' => sub {
     my ($self) = @_;
 
     $self->register_command('spam' => \&spam_cmd_handler);
     $self->register_command('mass-spam' => \&spam_cmd_handler);
+    $self->register_command('spam-file' => \&spam_file_handler);
 };
 
 # join channel after registering
@@ -20,6 +26,23 @@ after 'registered' => sub {
     $conn->{flood_register_handler}->($self, $conn);
 };
 
+sub spam_file_handler {
+    my ($self, $h, $cmd, $args) = @_;
+
+    my ($chan, $file) = $args =~ /^(#\S+)\s+(.+)/i;
+    unless ($chan && $file) {
+        return $h->push_write("Usage: spam-file #anxious /usr/ta/supernazi.txt\n");
+    }
+
+    # slurp file
+    return $h->push_write("$file does not exist\n") unless -e $file;
+    my @text = $self->slurp($file);
+
+    return $h->push_write("$file is empty or could not be read\n") unless @text;
+    $self->flood_text(\@text);
+
+    $self->mass_spam($chan);
+}
 
 sub spam_cmd_handler {
     my ($self, $h, $cmd, $args) = @_;
@@ -40,14 +63,16 @@ sub spam_cmd_handler {
 sub mass_spam {
     my ($self, $chan, $text) = @_;
     
-    while (my $conn = $self->spam($chan, $text)) {
+    my $i = 0;
+
+    while (my $conn = $self->spam($chan, $text, $i++)) {
         $self->h->push_write("Spamming $chan\n");
     }
 }
 
 # connect one bot and spam
 sub spam {
-    my ($self, $chan, $text) = @_;
+    my ($self, $chan, $text, $num) = @_;
     
     my $proxy = $self->get_random_proxy;
     my $conn = $self->connect($chan, $text, $proxy);
@@ -56,6 +81,7 @@ sub spam {
     $conn->{flood_register_handler} = sub {
         my ($self, $conn) = @_;
 
+        $conn->{flood_connection_num} = $num || 0;
         $conn->{flood_text}{$chan} = $text;
 
         # join channel
@@ -70,24 +96,33 @@ after 'joined' => sub {
     my ($self, $conn, $nick, $chan, $is_me) = @_;
 
     return unless $is_me;
-    #$conn->send_long_message(undef, 0, "PRIVMSG\001ACTION", $chan, $text);
 
-    my $text = $conn->{flood_text}{$chan} or return;
+    my $num = $conn->{flood_connection_num};
 
     $conn->{flood_timer} = AnyEvent->timer(
-        after => 0.0,
+        after => (0.0 + $num / 3.0),
         interval => 2.0,
         cb => sub {
+            my $text;
+            if ($self->flood_text && @{ $self->flood_text }) {
+                $text = shift @{ $self->flood_text };
+            } else {
+                $text = $conn->{flood_text}{$chan};
+            }
+
             $conn->{flood_repeat_count}{$chan} ||= 0;
 
-            if ($conn->{flood_repeat_count}{$chan}++ >= $self->repeat_count) {
+            if (! defined $text || 
+                (! $self->flood_text && $conn->{flood_repeat_count}{$chan}++ >= $self->repeat_count) ){
+                # disconnect if repeat count reached or flood text buffer is empty
+
                 delete $conn->{flood_timer};
                 delete $conn->{flood_repeat_count}{$chan};
                 $conn->disconnect;
-            } else {
-                $conn->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
-                #$conn->send_long_message(undef, 0, "PRIVMSG\001ACTION", $chan, $text);
+                return;
             }
+
+            $conn->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
         },
     );
 

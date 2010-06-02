@@ -257,9 +257,18 @@ sub load_available_ips {
     return unless $ips_file;
     
     my @ips = $self->slurp($ips_file) or return;
-    $self->available_ips(\@ips);
+
+    # filter out junk/comments
+    my @newips;
+    foreach my $line (@ips) {
+        $line =~ s/(#.*)$//;
+        next unless $line =~ /\w+/;
+        push @newips, $line;
+    }
+
+    $self->available_ips(\@newips);
     
-    print "Loaded " . (scalar @ips) . " from $ips_file\n";
+    print "Loaded " . (scalar @newips) . " from $ips_file\n";
 }
 
 # default ipv6 tunnel device
@@ -339,13 +348,13 @@ sub slurp {
     my $slurp;
     my $fh;
     open $fh, $filename or die $!;
-    {
-        local $/;
-        $slurp = <$fh>;
+    my @ret;
+    while (my $line = <$fh>) {
+        push @ret, $line;
     }
     close $fh;
     
-    return split(/\n/, $slurp);
+    return @ret;
 }
 
 sub handle_command {
@@ -360,6 +369,9 @@ sub handle_command {
     my $registered_commands = $self->registered_commands;
     my ($first_word, $args) = $cmd =~ m/^([\w-]+)\s?(.*)$/;
     return unless $first_word;
+
+    $args =~ s/^(\s+)//;
+    $first_word =~ s/(\s+)$//;
 
     my $cb = $registered_commands->{$first_word};
 

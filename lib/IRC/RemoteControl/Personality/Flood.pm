@@ -63,7 +63,7 @@ sub spam_cmd_handler {
 sub mass_spam {
     my ($self, $chan, $text) = @_;
     
-    my $i = 0;
+    my $i = 1;
 
     while (my $conn = $self->spam($chan, $text, $i++)) {
         $self->h->push_write("Spamming $chan\n");
@@ -99,33 +99,56 @@ after 'joined' => sub {
 
     my $num = $conn->{flood_connection_num};
 
-    $conn->{flood_timer} = AnyEvent->timer(
-        after => (0.0 + $num / 3.0),
-        interval => 2.0,
-        cb => sub {
-            my $text;
-            if ($self->flood_text && @{ $self->flood_text }) {
-                $text = shift @{ $self->flood_text };
-            } else {
-                $text = $conn->{flood_text}{$chan};
-            }
+    my $disconnect = sub {
+        delete $conn->{flood_timer};
+        delete $conn->{flood_repeat_count}{$chan};
+        $conn->disconnect;
+    };
 
-            $conn->{flood_repeat_count}{$chan} ||= 0;
+    my $get_line = sub {
+        my $text;
 
-            if (! defined $text || 
-                (! $self->flood_text && $conn->{flood_repeat_count}{$chan}++ >= $self->repeat_count) ){
-                # disconnect if repeat count reached or flood text buffer is empty
+        if ($self->flood_text && @{ $self->flood_text }) {
+            $text = shift @{ $self->flood_text };
+        } else {
+            $text = $conn->{flood_text}{$chan};
+        }
 
-                delete $conn->{flood_timer};
-                delete $conn->{flood_repeat_count}{$chan};
-                $conn->disconnect;
-                return;
-            }
+        return $text;
+    };
 
-            $conn->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
-        },
-    );
+    $conn->{flood_repeat_count}{$chan} = 1;
 
+    my $make_timer;
+    $make_timer = sub {
+        my $delay = 0.2 + $num / 2.0;
+        $delay += 2 if $conn->{flood_repeat_count}{$chan} > 4;
+
+        $conn->{flood_timer} = AnyEvent->timer(
+            after => $delay,
+            cb => sub {
+                my $text = $get_line->();
+
+                # AnyEvent::IRC won't send empty lines, this will cause the sent handler to not be fired
+                if (defined $text && $text =~ /^\n/) {
+                    $make_timer->();
+                }
+
+                if (! defined $text || 
+                    (! $self->flood_text && $conn->{flood_repeat_count}{$chan}++ >= $self->repeat_count) ){
+                    # disconnect if repeat count reached or flood text buffer is empty
+
+                    $disconnect->();
+                    return;
+                }
+
+                $conn->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
+            },
+        );
+    };
+
+    $conn->reg_cb(sent => $make_timer);
+    $make_timer->();
 };
 
 1;

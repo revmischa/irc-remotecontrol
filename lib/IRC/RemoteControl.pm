@@ -387,13 +387,19 @@ sub handle_command {
         }
         
         when (/^list( all)?/i) {
-            my @proxies = $1 || ! $self->proxy_proxy ? @{ $self->proxies } : $self->available_proxies;
+            if ($self->proxy_proxy) {
+                my @proxies = $1 ? @{ $self->proxies } : $self->available_proxies;
             
-            foreach my $p (@proxies) {
-                my $active;
-                $active = $p->ok && $p->ready ? "Active" : "Inactive";
+                foreach my $p (@proxies) {
+                    my $active;
+                    $active = $p->ok && $p->ready ? "Active" : "Inactive";
                 
-                $h->push_write("$active proxy: " . $p->description . "\n");
+                    $h->push_write("$active proxy: " . $p->description . "\n");
+                }
+            }
+
+            foreach my $ip (@{ $self->available_ips }) {
+                $h->push_write("Source IP $ip\n");
             }
         }
         

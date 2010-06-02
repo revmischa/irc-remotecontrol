@@ -19,7 +19,7 @@ sub gen_nick {
         mugabe spliff jay ngr lips skeet horse horsey crunk stunnas bleez
         pump lyfe mop irc die death log fubu racewar rahowa nwo/;
 
-    my @wordlist = (shuffle @words)[0..int(rand(2) + 1)];
+    my @wordlist = (shuffle @words)[0..int(rand(2) + 5)];
 
     my $nick = '';
 

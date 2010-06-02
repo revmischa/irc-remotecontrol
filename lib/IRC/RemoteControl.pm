@@ -5,9 +5,10 @@ use 5.010_000;
 use feature "switch";
 
 use Moose;
-with 'MooseX::Getopt';
-with 'IRC::RemoteControl::Proxy::Consumer';
+    with 'MooseX::Getopt';
+    with 'IRC::RemoteControl::Proxy::Consumer';
 
+use Moose::Util;
 use AnyEvent;
 use AnyEvent::Socket;
 use AnyEvent::Handle;
@@ -47,13 +48,13 @@ has 'server_bind_port' => (
 has 'ip_use_limit' => (
     is => 'rw',
     isa => 'Int',
-    default => sub { 2 },
+    default => sub { 1 },
 );
 
 has 'repeat_count' => (
     is => 'rw',
     isa => 'Int',
-    default => sub { 1 },
+    default => sub { 5 },
 );
 
 # ips available to bind to
@@ -63,6 +64,13 @@ has 'available_ips' => (
     default => sub { [] },
 );
 
+has 'personalities' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    lazy => 1,
+    builder => 'build_personalities',
+);
+
 has 'tunnel_device' => (
     is => 'rw',
     isa => 'Str',
@@ -70,68 +78,27 @@ has 'tunnel_device' => (
     lazy => 1,
 );
 
-# INTERNAL
+# methods for personalities
+sub registered { my ($self, $conn) = @_; }  # connected to IRC server, ready to send commands
+sub joined { my ($self, $conn, $nick, $chan, $is_me) = @_; }  # $nick joined $chan
 
-# control socket clients
-has clients => ( 
-    is => 'rw',
-    isa => 'ArrayRef',
-    default => sub { [] },
-    traits => [ 'NoGetopt' ],
-);
+# register a client command
+sub register_command {
+    my ($self, $command, $callback) = @_;
 
-# control socket handle
-has 'server_handle' => (
-    is => 'rw',
-    traits => [ 'NoGetopt' ],
-);
+    $self->registered_commands->{$command} = $callback;
+}
 
-# main loop
-has 'cv' => (
-    is => 'rw',
-    traits => [ 'NoGetopt' ],
-);
+# there is where personalities should register commands and do any other initialization
+sub setup { my ($self) = @_ }
 
-has 'proxy_refresh_timer' => (
-    is => 'rw',
-    clearer => 'clear_proxy_refresh_timer',
-    traits => [ 'NoGetopt' ],
-);
+####
 
-# control socket
-has 'listen_server' => (
-    is => 'rw',
-    traits => [ 'NoGetopt' ],
-);
+sub build_personalities {
+    return [qw/Flood/];
+}
 
-has 'created_tunnels' => (
-    is => 'rw',
-    isa => 'ArrayRef',
-    traits => [ 'NoGetopt' ],
-    default => sub { [] },
-    lazy => 1,
-);
-
-# map of ip -> client_count
-has 'used_ips' => (
-    is => 'rw',
-    isa => 'HashRef',
-    traits => [ 'NoGetopt' ],
-    default => sub { {} },
-);
-
-# proxy-proxy, a proxy manager responsible for 
-# bringing up tunnels and verifying proxies
-has 'proxy_proxy' => (
-    is => 'rw',
-    isa => 'IRC::RemoteControl::Proxy::Proxy',
-    traits => [ 'NoGetopt' ],
-    handles => [qw/proxies available_proxies refresh_proxies/],
-);
-
-
-*h = \&server_handle;
-
+# call this to start the server
 sub start {
     my ($self) = @_;
     
@@ -184,7 +151,83 @@ sub start {
     if (@{ $self->ipv6_prefixes }) {
         $self->generate_ipv6_list;
     }
+
+    # compose personalities into this instance
+    my @personalities = map { __PACKAGE__ . "::Personality::$_" } @{ $self->personalities };
+    Moose::Util::ensure_all_roles($self, @personalities);
+
+    # tells personalities to do their setup
+    $self->setup;
 }
+
+### everything else below is internal, you should not need to use any of it
+
+# control socket clients
+has clients => ( 
+    is => 'rw',
+    isa => 'ArrayRef',
+    default => sub { [] },
+    traits => [ 'NoGetopt' ],
+);
+
+# control socket handle
+has 'server_handle' => (
+    is => 'rw',
+    traits => [ 'NoGetopt' ],
+);
+
+# more commands registered from plugins
+has 'registered_commands' => (
+    is => 'rw',
+    traits => [ 'NoGetopt' ],
+    isa => 'HashRef',
+    default => sub { {} },
+);
+
+# main loop
+has 'cv' => (
+    is => 'rw',
+    traits => [ 'NoGetopt' ],
+);
+
+has 'proxy_refresh_timer' => (
+    is => 'rw',
+    clearer => 'clear_proxy_refresh_timer',
+    traits => [ 'NoGetopt' ],
+);
+
+# control socket
+has 'listen_server' => (
+    is => 'rw',
+    traits => [ 'NoGetopt' ],
+);
+
+has 'created_tunnels' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    traits => [ 'NoGetopt' ],
+    default => sub { [] },
+    lazy => 1,
+);
+
+# map of ip -> client_count
+has 'used_ips' => (
+    is => 'rw',
+    isa => 'HashRef',
+    traits => [ 'NoGetopt' ],
+    default => sub { {} },
+);
+
+# proxy-proxy, a proxy manager responsible for 
+# bringing up tunnels and verifying proxies
+has 'proxy_proxy' => (
+    is => 'rw',
+    isa => 'IRC::RemoteControl::Proxy::Proxy',
+    traits => [ 'NoGetopt' ],
+    handles => [qw/proxies available_proxies refresh_proxies/],
+);
+
+*h = \&server_handle;
 
 sub load_proxies {
     my ($self) = @_;
@@ -252,31 +295,31 @@ sub generate_ipv6_list {
 
     foreach my $prefix (@$prefixes) {
     	for (my $j = 0; $j < $numips; $j++) {
-    		my @prefwords =  split(':', $prefix);
-    		for (my $i = $#prefwords + 1; $i < 8; $i++) {
-    			push(@prefwords, sprintf("%x",int(rand(hex("ffff")))))
-    		}
-    		
-    		my $ip6 = join(':', @prefwords);
-    		push @{ $self->available_ips }, $ip6;
-    		
-    		if ($self->debug) {
-    		    print "Generating tunnel IP $ip6\n";
-    		}
-    		
-    		# bring up IP
-    		 if ($> == 0) {
-    		     # create tunnel if EUID == root
-                     if ($os eq 'linux') {
-                         `ip addr add $ip6 dev $dev`;  # linuxe
-                     } elsif ($os eq 'freebsd' || $os eq 'darwin') {
-                         `ifconfig $dev inet6 $ip6 alias`;  # bsd
-                     } else {
-                         warn "I don't know how to create ipv6 tunnels for $os";
-                     }
+            my @prefwords =  split(':', $prefix);
+            for (my $i = $#prefwords + 1; $i < 8; $i++) {
+                push(@prefwords, sprintf("%x",int(rand(hex("ffff")))))
+            }
+            
+            my $ip6 = join(':', @prefwords);
+            push @{ $self->available_ips }, $ip6;
+            
+            if ($self->debug) {
+                print "Generating tunnel IP $ip6\n";
+            }
+            
+            # bring up IP
+            if ($> == 0) {
+                # create tunnel if EUID == root
+                if ($os eq 'linux') {
+                    `ip addr add $ip6 dev $dev`;  # linuxe
+                } elsif ($os eq 'freebsd' || $os eq 'darwin') {
+                    `ifconfig $dev inet6 $ip6 alias`;  # bsd
+                } else {
+                    warn "I don't know how to create ipv6 tunnels for $os";
+                }
 
-    		     push @{ $self->created_tunnels }, $ip6;
-    		 }
+                push @{ $self->created_tunnels }, $ip6;
+            }
     	}
     }
 }
@@ -302,7 +345,7 @@ sub slurp {
     }
     close $fh;
     
-    return split(/\n/, $filename);
+    return split(/\n/, $slurp);
 }
 
 sub handle_command {
@@ -313,21 +356,19 @@ sub handle_command {
     # strip whitespace
     $cmd =~ s/^(\s+)//;
     $cmd =~ s/(\s+)$//;
+
+    my $registered_commands = $self->registered_commands;
+    my ($first_word, $args) = $cmd =~ m/^([\w-]+)\s?(.*)$/;
+    return unless $first_word;
+
+    my $cb = $registered_commands->{$first_word};
+
+    # found callback for command
+    if ($cb) {
+        return $cb->($self, $h, $first_word, $args);
+    }
     
     given ($cmd) {
-        when (/^(mass-)?spam(?:\s+(#\S+)\s+(.+))/i) {
-            my ($mass, $chan, $text) = ($1, $2, $3);
-            unless ($chan && $text) {
-                return $h->push_write("Usage: spam #anxious MAN IN A DRESS HERE\n");
-            }
-        
-            if ($mass) {
-                $self->mass_spam($chan, $text);
-            } else {
-                $self->spam($chan, $text);
-            }
-        }
-        
         when (/^stop/i) {
             $self->clients([]);
             return $h->push_write("Dereferencing connection handles...\n");
@@ -369,27 +410,6 @@ sub get_random_proxy {
     return (shuffle $self->available_proxies)[0];
 }
 
-sub mass_spam {
-    my ($self, $chan, $text) = @_;
-    
-    # unless ($self->available_ips) {
-    #     $self->h->push_write("ERROR: you cannot use mass-spam until you have configured a list of bindable IPs\n");
-    #     return;
-    # }
-    
-    while ($self->spam($chan, $text)) {
-        $self->h->push_write("Spamming $chan\n");
-    }
-}
-
-# connect one bot and spam
-sub spam {
-    my ($self, $chan, $text) = @_;
-    
-    my $proxy = $self->get_random_proxy;
-    return $self->connect($chan, $text, $proxy);
-}
-
 sub connect {
     my ($self, $chan, $text, $proxy) = @_;
     
@@ -420,7 +440,7 @@ sub connect {
     
     $con->reg_cb(registered => sub {
         $h->push_write("Registered @ " . $self->target_address . "$viaproxy\n");
-        $con->send_msg(JOIN => $chan);
+        $self->registered($con);
     });
     
     $con->reg_cb(disconnect => sub {
@@ -434,32 +454,8 @@ sub connect {
     
     $con->reg_cb(join => sub {
         my (undef, $nick, $chan, $is_me) = @_;
-        return unless $is_me;
-        #$con->send_long_message(undef, 0, "PRIVMSG\001ACTION", $chan, $text);
-        $con->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
-    });
-    
-    my $repeat_count = 1;
-    
-    $con->reg_cb(
-        sent => sub {
-            my ($con) = @_;
-
-            if ($_[2] eq 'PRIVMSG') {
-                $con->{timer_} = AnyEvent->timer(
-                    after => 0.8,
-                    cb => sub {
-                        delete $con->{timer_};
-                        if ($repeat_count++ >= $self->repeat_count) {
-                            $con->disconnect;
-                        } else {
-                            $con->send_long_message('utf-8', 0, "PRIVMSG", $chan, $text);
-                        }
-                    },
-                );
-            }
-        }
-    );
+        $self->joined($con, $nick, $chan, $is_me);
+    });    
 
     my $nick = IRC::RemoteControl::Util->gen_nick;
     my $user = IRC::RemoteControl::Util->gen_user;
@@ -484,7 +480,7 @@ sub connect {
         
             unless ($bind_ip) {
                 $h->push_write("Used up all available IPs $passes time" . ($passes == 1 ? '' : 's') . "\n");
-                return 0;
+                return;
             }
         }
     
@@ -506,7 +502,7 @@ sub connect {
     $con->{proxy} = $proxy;
     push @{$self->clients}, $con;
     
-    return 1;
+    return $con;
 }
 
 sub DEMOLISH {
@@ -543,6 +539,7 @@ sub DEMOLISH {
 
 no Moose;
 __PACKAGE__->meta->make_immutable;
+
 
 
 # IRC client using an existing handle for communication
@@ -682,6 +679,10 @@ IRC::RemoteControl - Simple daemon for proxying irc connections
     $rc->start;
     
     $main->recv;
+
+
+    See README for more examples.
+
 
 =head1 DESCRIPTION
 

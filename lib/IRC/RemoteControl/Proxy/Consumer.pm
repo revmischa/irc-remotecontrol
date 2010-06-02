@@ -52,7 +52,7 @@ has 'ipv6_prefixes' => (
 has 'ipv6_tunnel_count' => (
     is => 'rw',
     isa => 'Int',
-    default => 100_000,
+    default => 1_000,
 );
 
 1;

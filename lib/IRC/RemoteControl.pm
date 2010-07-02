@@ -232,7 +232,7 @@ has 'proxy_proxy' => (
 sub load_proxies {
     my ($self) = @_;
     
-    my $pp = IRC::RemoteControl::Proxy::Proxy->new_with_options(
+    my $pp = IRC::RemoteControl::Proxy::Proxy->new(
         target_address      => $self->target_address,
         target_port         => $self->target_port,
         # ip_use_limit   => $self->ip_use_limit,

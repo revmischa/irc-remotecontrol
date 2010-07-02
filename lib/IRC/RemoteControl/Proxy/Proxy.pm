@@ -5,7 +5,6 @@
 package IRC::RemoteControl::Proxy::Proxy;
 
 use Moose;
-with 'MooseX::Getopt';
 with 'IRC::RemoteControl::Proxy::Consumer';
 
 use namespace::autoclean;

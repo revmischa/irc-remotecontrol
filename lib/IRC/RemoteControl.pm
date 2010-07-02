@@ -24,6 +24,7 @@ our $VERSION = '0.03';
 has 'require_proxy' => (
     is => 'rw',
     isa => 'Bool',
+    default => 0,
 );
 
 has 'connect_timeout' => (
@@ -433,6 +434,7 @@ sub connect {
     
     my $h = $self->h;
 
+    $h->push_write("require_proxy => " . $self->require_proxy . "\n");
     if (! $proxy && $self->require_proxy && $self->use_proxy) {
         $h->push_write("No active proxies found and require_proxy=1\n");
         return;

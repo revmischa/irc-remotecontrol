@@ -11,13 +11,13 @@ You may need libssh2-1-dev
 Usage:
 
   # normal usage
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --require_proxy
   
   # SSH tunnels only
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH 
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH --require_proxy
 
   # load SOCKS proxies
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies
+  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies --require_proxy
 
 
   # create 20 ipv6 tunnels and only use them
@@ -37,12 +37,54 @@ Usage:
   $ ./irc-remotecontrol.pl --target_address irc.freenode.net
     --personalities Flood --personalities Foo
     --server_bind_port 1025 --server_bind_ip 127.0.0.1
-
+    --require_proxy
 
 You may specify a list of SSH tunnels in ssh-tunnels.txt, a list of
 SOCKS proxies in socks-proxies.txt and a list of available source IPs
 in ips.txt.
 
+Since writing this all out by hand is annoying, it is recommended you
+make shell script or perl wrappers around whatever fits your
+circumstances best.
+
+You may find it helpful to create your own IRC::RC objects with
+defaults that work for you with IRC::RemoteControl->new_with_options()
+as in irc-remotecontrol.pl
+
+
+OPTIONS
+ --target_address (required) - Address of the IRC server you wish to connect to
+
+ --target_port - Port. Default: 6667
+ 
+ --proxy_types - Types of proxies to use. Can be specified multiple
+   times. Default: SSH, SOCKS
+ 
+ --use_proxy - If proxies are loaded, use them. Defaults to on
+
+ --require_proxy - Refuse to connect without using a
+   proxy. Recommended unless using IPv6 tunnels.
+ 
+ --ipv6_prefixes - If you have an IPv6 subnet, you can automatically
+   bring up random IPs and use them. Can be specified multiple times.
+
+ --ipv6_tunnel_count - How many random IPv6 addresses to use. Defaut: 1000
+
+ --tunnel_device - Name of your IPv6 tunnel device.
+   Defaults: linux: he-ipv6, bsd/darwin: gif0
+
+ --ip_use_limit - How many connections to make per source IP. Default: 1
+
+ --available_ips - List of source IPs IRC client connections can bind
+   to. Can be specified multiple times, also read from ips.txt
+
+ --server_bind_ip/server_bind_port - TCP server options. Default localhost:1488
+
+ --fetch_socks_proxies - Attempt to use WWW::FreeProxyListsCom to find SOCKS proxies automatically
+
+ --repeat_count - How many times to repeat spam messages per-client. Default: 5
+
+ --connect-timeout - IRC client connection timeout before giving up. Default: 10 seconds
 
 INSTALLATION
 

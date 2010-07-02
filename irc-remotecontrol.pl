@@ -10,7 +10,8 @@ use AnyEvent::Socket;
 
 my $cv = AnyEvent->condvar;
 
-my $rc = IRC::RemoteControl->new_with_options(require_proxy => 1);
+# you can pass in defaults here, e.g. target_address => 'irc.freenode.net'
+my $rc = IRC::RemoteControl->new_with_options();
 
 $SIG{INT} = sub {
     warn "Shutting down...\n";

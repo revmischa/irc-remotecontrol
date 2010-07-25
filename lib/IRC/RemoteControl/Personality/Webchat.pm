@@ -166,15 +166,6 @@ sub webchat_spam_chan {
         # add session id if present
         $params{s} = $s if $s;
 
-        # build URL
-        my $u = new URI("$dest_addr$url");
-        $params{r} = time();  # cache-busting probably unnecessary
-        $params{t} = $t if $t;
-        $u->query_form_hash(%params);
-
-        # debug
-        $h->push_write(" >> $u\n") if $self->debug;
-
         # use proxy if available
         my @req;
         if ($http_proxy) {
@@ -190,6 +181,15 @@ sub webchat_spam_chan {
         my $c = $params{c};
 
         my $do_post = sub {
+            # build URL
+            my $u = new URI("$dest_addr$url");
+            $params{r} = time();  # cache-busting probably unnecessary
+            $params{t} = $t if $t;
+            $u->query_form_hash(%params);
+
+            # debug
+            $h->push_write(" >> $u\n") if $self->debug;
+
             # do request
             my $guard = http_request(POST => $u->as_string, @req, sub {
                 my ($body, $hdr) = @_;
@@ -238,7 +238,7 @@ sub webchat_spam_chan {
                     $post_req->($next_step);
                 } else {
                     # done, cleanup
-                    $http_proxy->in_use(0);
+                    $http_proxy->in_use(0) if $http_proxy;
                     $self->webchat_requests->{$id} = [];
                 }
             });
@@ -265,7 +265,8 @@ sub webchat_spam_chan {
                     return $fail->();
                 }
 
-                $params{c} =~ s/%%TROLL%%/$body/sm;
+                $c =~ s/%%TROLL%%/$body/sm;
+                $params{c} = $c;
                 return $do_post->();
             };
         } else {

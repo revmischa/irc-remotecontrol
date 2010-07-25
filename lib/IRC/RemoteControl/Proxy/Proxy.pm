@@ -168,7 +168,7 @@ sub fetch_proxies {
     print "Fetching proxies from freeproxylists.com...\n";
 
     my $fetch_type = lc $type;
-    $fetch_type = 'standard' if lc $type eq 'http';
+    $fetch_type = 'anonymous' if lc $type eq 'http';
     my $proxies = $fetcher->get_list(type => lc $fetch_type, max_pages => 2);
     unless ($proxies) {
         warn "Error fetching proxies: " . $fetcher->error . "\n";

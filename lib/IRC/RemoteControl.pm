@@ -716,36 +716,18 @@ IRC::RemoteControl - Simple daemon for proxying irc connections
     $main->recv;
 
 
-    See README for more examples.
+    See README for more information.
 
 
 =head1 DESCRIPTION
 
-This project aims to bring a new level of professionalism and stable code to the world of remote-control IRC.
+This project aims to bring a new level of professionalism and stable
+code to the world of remote-control IRC. It has a modular design,
+allowing reuse of different proxy and personality types.
 
 =head2 EXPORT
 
 None by default.
-
-
-=head1 HISTORY
-
-=over 8
-
-=item 0.01
-
-Original version; created by h2xs 1.23 with options
-
-  -n
-	IRC::RemoteControl
-	-A
-	-C
-	-X
-	-c
-
-=back
-
-
 
 =head1 SEE ALSO
 

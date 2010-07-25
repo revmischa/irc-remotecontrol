@@ -266,7 +266,7 @@ sub webchat_spam_chan {
                 }
 
                 $params{c} =~ s/%%TROLL%%/$body/sm;
-                return $do_post();
+                return $do_post->();
             };
         } else {
             return $do_post->();

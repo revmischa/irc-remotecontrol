@@ -18,10 +18,17 @@ has 'ok' => (
     isa => 'Bool',
     default => 1,
 );
+
 has 'ready' => (
     is => 'rw',
     isa => 'Bool',
     default => 1,
+);
+
+has 'scheme' => (
+    is 'ro',
+    isa => 'Str',
+    default => 'http',
 );
 
 sub prepare {

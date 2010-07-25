@@ -18,7 +18,7 @@ use List::Util qw/shuffle/;
 use IRC::RemoteControl::Proxy::Proxy;
 use IRC::RemoteControl::Util;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # proxy required to connect
 has 'require_proxy' => (

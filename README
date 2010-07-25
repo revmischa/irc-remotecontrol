@@ -1,4 +1,4 @@
-IRC-RemoteControl version 0.01
+IRC-RemoteControl
 ==============================
 
 Fight CPAN censorship! Support backpan!
@@ -29,7 +29,7 @@ Usage:
     --debug
 
   # abuse freenode
-  $ ./webchat.pl http://webchat.freenode.net/dynamic/two --fetch_http_proxies 1
+  $ ./webchat.pl http://webchat.freenode.net/dynamic/two --fetch_http_proxies
 
   # load a specific set of personalities with the server on a non-standard port on localhost
   $ ./irc-remotecontrol.pl -t irc.freenode.net

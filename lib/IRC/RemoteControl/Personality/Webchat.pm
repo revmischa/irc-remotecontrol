@@ -180,7 +180,7 @@ sub webchat_spam_chan {
         if ($http_proxy) {
             my @proxy = ($http_proxy->proxy_address);
             push @proxy, ($http_proxy->proxy_port || 80);
-            push @proxy, 'http';
+            push @proxy, $http_proxy->scheme;;
             push @req, (proxy => \@proxy);
 
             $http_proxy->in_use(1);

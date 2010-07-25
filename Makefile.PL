@@ -22,6 +22,7 @@ WriteMakefile(
         'WWW::FreeProxyListsCom' => 0,
         'IO::Socket::Socks' => 0,
         'parent' => 0,
+        'JSON::XS' => 0,
     },
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/IRC/RemoteControl.pm', # retrieve abstract from module

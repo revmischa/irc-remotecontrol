@@ -21,7 +21,6 @@ Usage:
 k
 
   # create 20 ipv6 tunnels and only use them
-
   $ sudo ./irc-remotecontrol.pl 
     --target irc.homelien.no
     --use_proxy 0 
@@ -31,9 +30,7 @@ k
     --debug
 
 
-  # load a specific set of personalities with the server on a
-    non-standard port on localhost
-
+  # load a specific set of personalities with the server on a non-standard port on localhost
   $ ./irc-remotecontrol.pl -t irc.freenode.net
     --personalities Flood --personalities Foo
     --server_bind_port 1025 --server_bind_ip 127.0.0.1
@@ -41,7 +38,8 @@ k
 
 You may specify a list of SSH tunnels in ssh-tunnels.txt, a list of
 SOCKS proxies in socks-proxies.txt and a list of available source IPs
-in ips.txt.
+in ips.txt. If you are using the Webchat personality, you may use HTTP
+and HTTPS proxies, specified in http-proxies.txt and https-proxies.txt.
 
 Since writing this all out by hand is annoying, it is recommended you
 make shell script or perl wrappers around whatever fits your
@@ -82,11 +80,14 @@ OPTIONS
 
  --fetch_socks_proxies - Attempt to use WWW::FreeProxyListsCom to find SOCKS proxies automatically
 
+ --fetch_http_proxies - Attempt to use WWW::FreeProxyListsCom to find HTTP/S proxies automatically
+
  --repeat_count - How many times to repeat spam messages per-client. Default: 5
 
  --connect-timeout - IRC client connection timeout before giving up. Default: 10 seconds
 
  --debug/-d - Verbose output
+
 
 INSTALLATION
 
@@ -96,6 +97,13 @@ To install this module type the following:
    make
    make test
    make install
+
+
+WEBCHAT
+
+IRC::RemoteControl supports using HTTP/S proxies with webchat-enabled
+IRC gateways. See webchat.pl if you are interested.
+
 
 COPYRIGHT AND LICENSE
 

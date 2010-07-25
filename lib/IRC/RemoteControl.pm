@@ -87,6 +87,7 @@ sub joined { my ($self, $conn, $nick, $chan, $is_me) = @_; }  # $nick joined $ch
 sub register_command {
     my ($self, $command, $callback) = @_;
 
+    push @{$self->known_commands}, $command;
     $self->registered_commands->{$command} = $callback;
 }
 
@@ -228,14 +229,31 @@ has 'proxy_proxy' => (
     handles => [qw/proxies available_proxies refresh_proxies/],
 );
 
+has 'known_commands' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    default => sub { ['list', 'list all', 'stop'] },
+);
+
 *h = \&server_handle;
 
 sub load_proxies {
     my ($self) = @_;
-    
+
+    return unless @{$self->proxy_types};
+
+    my %opts;
+    if ($self->target_address) {
+        $opts{target_address} = $self->target_address;
+        $opts{target_port} = $self->target_port;
+    }
+
+    # FIXME: refactor this to pull attributes from Consumer and copy them
+    $opts{proxy_types} = $self->proxy_types;
+    $opts{fetch_http_proxies} = $self->fetch_http_proxies;
+
     my $pp = IRC::RemoteControl::Proxy::Proxy->new(
-        target_address      => $self->target_address,
-        target_port         => $self->target_port,
+        %opts,
         # ip_use_limit   => $self->ip_use_limit,
     );
     
@@ -416,23 +434,28 @@ sub handle_command {
             break unless $cmd;
             
             return $h->push_write("Unknown command '$cmd'. " .
-                "Available commands: spam, mass-spam, list, list all, stop\n");
+                "Available commands: " . join(', ', @{$self->known_commands}) . "\n");
         }
     }
 }
 
 sub get_random_proxy {
-    my ($self) = @_;
+    my ($self, $type) = @_;
     
-    return unless $self->proxy_proxy && $self->available_proxies;
+    return unless $self->proxy_proxy && $self->available_proxies($type);
     
-    return (shuffle $self->available_proxies)[0];
+    return (shuffle $self->available_proxies($type))[0];
 }
 
 sub connect {
     my ($self, $chan, $text, $proxy) = @_;
     
     my $h = $self->h;
+
+    unless ($self->target_address) {
+        $h->push_write("Attempting to connect but no target specified\n");
+        return;
+    }
 
     $h->push_write("require_proxy => " . $self->require_proxy . "\n");
     if (! $proxy && $self->require_proxy && $self->use_proxy) {

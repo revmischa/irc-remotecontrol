@@ -62,9 +62,8 @@ sub spam_cmd_handler {
 
 sub mass_spam {
     my ($self, $chan, $text) = @_;
-    
-    my $i = 1;
 
+    my $i = 1;
     while (my $conn = $self->spam($chan, $text, $i++)) {
         $self->h->push_write("Spamming $chan\n");
     }

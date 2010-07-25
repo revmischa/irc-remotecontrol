@@ -54,6 +54,13 @@ has 'poll_timeout' => (
 
 # # #
 
+# automatically create subprocess to manage tunnel?
+has 'needs_tunnel' => (
+    is => 'ro',
+    isa => 'Bool',
+    default => 1,
+);
+
 has 'type' => (
     is => 'ro',
     isa => 'Str',

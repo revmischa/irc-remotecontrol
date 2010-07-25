@@ -37,6 +37,11 @@ has 'fetch_socks_proxies' => (
     isa => 'Bool',
 );
 
+has 'fetch_http_proxies' => (
+    is => 'rw',
+    isa => 'Bool',
+);
+
 has 'proxy_types' => (
     is => 'rw',
     isa => 'ArrayRef',

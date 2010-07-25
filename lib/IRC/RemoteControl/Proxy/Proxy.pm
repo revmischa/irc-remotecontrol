@@ -26,7 +26,7 @@ use feature "switch";
 has 'target_address' => (
     is => 'rw',
     isa => 'Str',
-    required => 1,
+    required => 0,
 );
 
 has 'target_port' => (
@@ -108,9 +108,16 @@ sub begin {
 }
 
 sub available_proxies {
-    my ($self) = @_;
+    my ($self, $type) = @_;
     
-    return grep { $_->ok && ! $_->in_use } @{ $self->proxies };
+    my @avail = grep { $_->ok && ! $_->in_use } @{ $self->proxies };
+
+    # filter by type
+    if ($type) {
+        @avail = grep { lc $_->type eq lc $type } @avail;
+    }
+
+    return @avail;
 }
 
 sub load_proxies {
@@ -119,15 +126,8 @@ sub load_proxies {
     my @proxies;
 
     foreach my $proxy_type (@{ $self->proxy_types }) {
-        given (lc $proxy_type) {
-            when ('socks') {
-                push @proxies, $self->load_socks_proxies;
-            }
-            
-            when ('ssh') {
-                push @proxies, $self->load_ssh_proxies;
-            }
-        }
+        my $meth = "load_" . lc $proxy_type . "_proxies";
+        push @proxies, $self->$meth;
     }
     
     foreach my $proxy (@proxies) {
@@ -163,9 +163,11 @@ sub fetch_proxies {
         warn "WWW::FreeProxyListsCom is not installed, not fetching proxies\n";
         return ();
     }
-    
+
     my $fetcher = WWW::FreeProxyListsCom->new;
-    my $proxies = $fetcher->get_list(type => lc $type, max_pages => 3);
+    my $fetch_type = lc $type;
+    $fetch_type = 'standard' if lc $type eq 'http';
+    my $proxies = $fetcher->get_list(type => lc $fetch_type, max_pages => 2);
     unless ($proxies) {
         warn "Error fetching proxies: " . $fetcher->error . "\n";
         return ();
@@ -193,6 +195,28 @@ sub load_socks_proxies {
     return @proxies;
 }
 
+sub load_http_proxies {
+    my ($self) = @_;
+    
+    my @proxies;
+    
+    push @proxies, $self->load_proxies_from_file('HTTP');
+    push @proxies, $self->fetch_proxies('HTTP') if $self->fetch_http_proxies;
+    
+    return @proxies;
+}
+
+sub load_https_proxies {
+    my ($self) = @_;
+    
+    my @proxies;
+    
+    push @proxies, $self->load_proxies_from_file('HTTPS');
+    push @proxies, $self->fetch_proxies('HTTPS') if $self->fetch_http_proxies;
+    
+    return @proxies;
+}
+
 sub load_ssh_proxies {
     my ($self) = @_;
     
@@ -202,8 +226,9 @@ sub load_ssh_proxies {
 sub load_proxies_from_file {
     my ($self, $type) = @_;
     
-    my @list = $self->load_file(lc $type . '-proxies.txt') or return ();
-    
+    my $filename = lc $type . '-proxies.txt';
+    my @list = $self->load_file($filename) or return ();
+
     my @proxies;
     foreach my $line (@list) {
         next if $line =~ /^\s*#/; # skip comments
@@ -220,7 +245,7 @@ sub load_proxies_from_file {
         my $proxy = $self->create_proxy($type, $host, $port, $username, $password);
         push @proxies, $proxy if $proxy;
     }
-    
+
     return @proxies;
 }
 
@@ -356,6 +381,8 @@ sub process_command_proxy {
 
 sub spawn_proxy_tunnel {
     my ($self, $proxy, $hdl) = @_;
+
+    return 1 unless $proxy->needs_tunnel;
     
     return $self->spawn_tunnel($proxy, sub {
         my $status = shift;
@@ -374,9 +401,10 @@ sub create_proxy {
     
     my %opts = (
         proxy_address => $host,
-        dest_address => $self->target_address,
         type => $type,
     );
+
+    $opts{dest_address} = $self->target_address if $self->target_address;
     $opts{proxy_port} = $port if defined $port;
     $opts{username} = $username if defined $username;
     $opts{password} = $password if defined $password;

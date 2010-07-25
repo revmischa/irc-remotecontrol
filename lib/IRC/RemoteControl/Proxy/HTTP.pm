@@ -26,7 +26,7 @@ has 'ready' => (
 );
 
 has 'scheme' => (
-    is 'ro',
+    is => 'ro',
     isa => 'Str',
     default => 'http',
 );

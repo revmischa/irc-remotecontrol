@@ -6,7 +6,7 @@ use Moose;
 use namespace::autoclean;
 
 has 'scheme' => (
-    is 'ro',
+    is => 'ro',
     isa => 'Str',
     default => 'https',
 );

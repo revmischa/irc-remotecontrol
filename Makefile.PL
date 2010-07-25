@@ -12,7 +12,7 @@ WriteMakefile(
         'AnyEvent::IRC::Client' => 0,
         'AnyEvent::IRC' => 0,
         'AnyEvent::Socket' => 0,
-        'MooseX:Getopt' => 0,  
+        'MooseX::Getopt' => 0,  
         'MooseX::Types::CheckedUtilExports' => 0,
         'Getopt::Long::Descriptive' => 0,
         'Net::SSH2' => 0,

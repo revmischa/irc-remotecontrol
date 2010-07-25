@@ -9,12 +9,18 @@ has 'target_address' => (
     is => 'rw',
     isa => 'Str',
     required => 1,
+    cmd_flag => 'target',
+    cmd_aliases => 't',
+    metaclass => 'MooseX::Getopt::Meta::Attribute',
 );
 
 has 'target_port' => (
     is => 'rw',
     isa => 'Int',
     default => 6667,
+    cmd_flag => 'port',
+    cmd_aliases => 'p',
+    metaclass => 'MooseX::Getopt::Meta::Attribute',
 );
 
 # OPTIONAL
@@ -22,6 +28,8 @@ has 'target_port' => (
 has 'debug' => (
     is => 'rw',
     isa => 'Bool',
+    cmd_aliases => 'd',
+    metaclass => 'MooseX::Getopt::Meta::Attribute',
 );
 
 has 'fetch_socks_proxies' => (
@@ -52,7 +60,7 @@ has 'ipv6_prefixes' => (
 has 'ipv6_tunnel_count' => (
     is => 'rw',
     isa => 'Int',
-    default => 1_000,
+    default => 100,
 );
 
 1;

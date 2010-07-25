@@ -11,19 +11,19 @@ You may need libssh2-1-dev
 Usage:
 
   # normal usage
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --require_proxy
+  $ ./irc-remotecontrol.pl --target irc.efnet.net --require_proxy
   
   # SSH tunnels only
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --proxy_types SSH --require_proxy
+  $ ./irc-remotecontrol.pl -t irc.efnet.net --proxy_types SSH 
 
   # load SOCKS proxies
-  $ ./irc-remotecontrol.pl --target_address irc.efnet.net --fetch_socks_proxies --require_proxy
-
+  $ ./irc-remotecontrol.pl -t irc.efnet.net --fetch_socks_proxies
+k
 
   # create 20 ipv6 tunnels and only use them
 
   $ sudo ./irc-remotecontrol.pl 
-    --target_address irc.homelien.no
+    --target irc.homelien.no
     --use_proxy 0 
     --ipv6_tunnel_count 20
     --ipv6_prefixes 2001:470:80e1:ba21::
@@ -34,7 +34,7 @@ Usage:
   # load a specific set of personalities with the server on a
     non-standard port on localhost
 
-  $ ./irc-remotecontrol.pl --target_address irc.freenode.net
+  $ ./irc-remotecontrol.pl -t irc.freenode.net
     --personalities Flood --personalities Foo
     --server_bind_port 1025 --server_bind_ip 127.0.0.1
     --require_proxy
@@ -53,9 +53,9 @@ as in irc-remotecontrol.pl
 
 
 OPTIONS
- --target_address (required) - Address of the IRC server you wish to connect to
+ --target/-t (required) - Address of the IRC server you wish to connect to
 
- --target_port - Port. Default: 6667
+ --port/-p - Port. Default: 6667
  
  --proxy_types - Types of proxies to use. Can be specified multiple
    times. Default: SSH, SOCKS
@@ -86,6 +86,8 @@ OPTIONS
 
  --connect-timeout - IRC client connection timeout before giving up. Default: 10 seconds
 
+ --debug/-d - Verbose output
+
 INSTALLATION
 
 To install this module type the following:
@@ -97,7 +99,7 @@ To install this module type the following:
 
 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by the GNAA
+Copyright (C) 2010 Thaddeus Wooster
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.10.0 or,

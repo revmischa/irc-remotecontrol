@@ -243,13 +243,10 @@ sub load_proxies {
     return unless @{$self->proxy_types};
 
     # need to copy attributes from Proxy::Consumer
-    # is there a better way to do this? probably
     my $pp_attr = {};
-    $pp_attr->{$_} = $self->$_ for (qw/
-        target_address target_port debug fetch_socks_proxies
-        proxy_types use_proxy ipv6_prefixes ipv6_tunnel_count
-        fetch_http_proxies
-    /);
+    my @consumer_attrs = IRC::RemoteControl::Proxy::Consumer->meta->get_attribute_list;
+    $pp_attr->{$_} = $self->$_
+        for (@consumer_attrs);
 
     my $pp = IRC::RemoteControl::Proxy::Proxy->new(%$pp_attr);
     

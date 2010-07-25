@@ -29,6 +29,8 @@ k
     --tunnel_device he-tunnel
     --debug
 
+  # abuse freenode
+  $ ./webchat.pl http://webchat.freenode.net/dynamic/two --fetch_http_proxies 1
 
   # load a specific set of personalities with the server on a non-standard port on localhost
   $ ./irc-remotecontrol.pl -t irc.freenode.net

@@ -10,6 +10,7 @@ use JSON::XS;
 use URI;
 use URI::QueryParam;
 use IRC::RemoteControl::Util;
+use List::Util qw/shuffle/;
 
 has 'webchat_requests' => (
     is => 'rw',
@@ -18,10 +19,23 @@ has 'webchat_requests' => (
     default => sub { {} },  # id => \@guards
 );
 
+has 'timers' => (
+    is => 'rw',
+    isa => 'ArrayRef',
+    lazy => 1,
+    default => sub { [] },
+);
+
 has 'next_id' => (
     is => 'rw',
     isa => 'Int',
     default => 1,
+);
+
+has 'mass_spam_delay' => (
+    is => 'rw',
+    isa => 'Num',
+    default => 0.5,
 );
 
 # register spam and mass-spam commands
@@ -50,27 +64,55 @@ sub webchat_cmd_handler {
     }
 
     if ($cmd eq 'webchat-spam') {
-        $self->webchat_spam_chan($h, $dest_addr, $chan, $msg);
+        $self->webchat_spam_chan($self->get_random_webchat_proxy, $h, $dest_addr, $chan, $msg);
     } elsif ($cmd eq 'webchat-mass-spam') {
         $self->webchat_mass_spam_chan($h, $dest_addr, $chan, $msg);
     }
 }
 
 sub webchat_mass_spam_chan {
-    my ($self, @extra) = @_;
+    my ($self, $h, $dest_addr, $chan, $msg) = @_;
     
-    my $i = 1;
-    while (my $conn = $self->webchat_spam_chan(@extra)) {
-        $self->h->push_write("Spamming...\n");
+    my $i = 0;
+
+    my @proxies = $self->get_available_webchat_proxies;
+    if ($self->require_proxy && ! @proxies) {
+        $h->push_write("Out of HTTP proxies and require_proxy = 1\n");
+        return;
+    }
+
+    foreach my $proxy (@proxies) {
+        my $w = AnyEvent->timer(after => $i, cb => sub {
+            $self->h->push_write("Spamming $chan with proxy " . $proxy->description . "...\n");
+            $self->webchat_spam_chan($proxy, $h, $dest_addr, $chan, $msg);
+        });
+
+        $i += $self->mass_spam_delay;
+
+        push @{ $self->timers }, $w;
     }
 }
 
+sub get_available_webchat_proxies {
+    my ($self) = @_;
+
+    my @proxies = ( $self->available_proxies('http'),
+                    $self->available_proxies('https') );
+
+    return @proxies;
+}
+
+sub get_random_webchat_proxy {
+    my ($self) = @_;
+
+    my @proxies = $self->get_available_webchat_proxies;
+    @proxies = shuffle @proxies;
+    return $proxies[0];
+}
 
 sub webchat_spam_chan {
-    my ($self, $h, $dest_addr, $chan, $msg) = @_;
+    my ($self, $http_proxy, $h, $dest_addr, $chan, $msg) = @_;
 
-    # get HTTP proxy
-    my $http_proxy = $self->get_random_proxy('http');
     if ($self->require_proxy && ! $http_proxy) {
         $h->push_write("Out of HTTP proxies and require_proxy = 1\n");
         return;

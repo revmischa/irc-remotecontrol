@@ -457,7 +457,6 @@ sub connect {
         return;
     }
 
-    $h->push_write("require_proxy => " . $self->require_proxy . "\n");
     if (! $proxy && $self->require_proxy && $self->use_proxy) {
         $h->push_write("No active proxies found and require_proxy=1\n");
         return;

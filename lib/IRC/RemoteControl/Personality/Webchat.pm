@@ -4,9 +4,6 @@ package IRC::RemoteControl::Personality::Webchat;
 
 use Moose::Role;
 
-use HTML::TreeBuilder;
-use WWW::Mechanize;
-
 use AnyEvent;
 use AnyEvent::HTTP;
 use JSON::XS;
@@ -38,13 +35,6 @@ after 'setup' => sub {
 sub webchat_cmd_handler {
     my ($self, $h, $cmd, $args) = @_;
 
-    # get HTTP proxy
-    my $http_proxy = $self->get_random_proxy('http');
-    if ($self->require_proxy && ! $http_proxy) {
-        $h->push_write("No available HTTP proxy found but require_proxy = 1\n");
-        return;
-    }
-
     # we should have the webchat endpoint in dest_addr
     my $dest_addr = $self->target_address;
     if (! $dest_addr || $dest_addr !~ /^(http\S+)/i) {
@@ -60,9 +50,9 @@ sub webchat_cmd_handler {
     }
 
     if ($cmd eq 'webchat-spam') {
-        $self->webchat_spam_chan($h, $dest_addr, $chan, $msg, $http_proxy);
+        $self->webchat_spam_chan($h, $dest_addr, $chan, $msg);
     } elsif ($cmd eq 'webchat-mass-spam') {
-        $self->webchat_mass_spam_chan($h, $dest_addr, $chan, $msg, $http_proxy);
+        $self->webchat_mass_spam_chan($h, $dest_addr, $chan, $msg);
     }
 }
 
@@ -77,21 +67,17 @@ sub webchat_mass_spam_chan {
 
 
 sub webchat_spam_chan {
-    my ($self, $h, $dest_addr, $chan, $msg, $http_proxy) = @_;
+    my ($self, $h, $dest_addr, $chan, $msg) = @_;
+
+    # get HTTP proxy
+    my $http_proxy = $self->get_random_proxy('http');
+    if ($self->require_proxy && ! $http_proxy) {
+        $h->push_write("Out of HTTP proxies and require_proxy = 1\n");
+        return;
+    }
 
     my $debug = 1;
     my $troll_me = 0;
-
-    # if no message specified, pull one from troll_me or shitmyniggersays
-    unless ($msg) {
-        my $troll_url = rand() < 0.5 ? 'http://rolloffle.churchburning.org/troll_me_text.php' :
-            'http://shitmyniggersays.com/random.php';
-
-        # TODO: Fix this to use AnyEvent::HTTP. This blocks which is lame.
-        my $mech = new WWW::Mechanize;
-        $mech->get($troll_url);
-        $msg = $mech->content( format => 'text' );
-    }
 
     my $nick = IRC::RemoteControl::Util->gen_nick;
 
@@ -109,7 +95,7 @@ sub webchat_spam_chan {
         ['/e/p', c => "JOIN $chan"],  # join
         ['/e/s'],
         ['/e/s'],
-        ['/e/p', c => "PRIVMSG $chan :$msg"],  # privmsg
+        ['/e/p', c => "PRIVMSG $chan :" . ($msg || '%%TROLL%%')],  # privmsg
     );
 
     # generate an id for this session
@@ -119,6 +105,7 @@ sub webchat_spam_chan {
     my $fail = sub {
         if ($http_proxy) {
             $http_proxy->ok(0);
+            $http_proxy->in_use(0);
         }
 
         $failed = 1;
@@ -153,67 +140,100 @@ sub webchat_spam_chan {
             push @proxy, ($http_proxy->proxy_port || 80);
             push @proxy, 'http';
             push @req, (proxy => \@proxy);
+
+            $http_proxy->in_use(1);
         }
 
-        # do request
-        my $guard = http_request(POST => $u->as_string, @req, sub {
-            my ($body, $hdr) = @_;
+        # command
+        my $c = $params{c};
 
-            # need 2XX HTTP response
-            if ($hdr->{Status} !~ /^2/) {
-                $h->push_write("Error: $hdr->{Status} $hdr->{Reason}\n");
-                return $fail->();
-            }
+        my $do_post = sub {
+            # do request
+            my $guard = http_request(POST => $u->as_string, @req, sub {
+                my ($body, $hdr) = @_;
 
-            unless ($body) {
-                $h->push_write("Failed to get response body\n");
-                return $fail->();
-            }
-
-            # klined? probably.
-            my ($klined_ip) = $body =~ /Your reported IP \[([\.\d\:]+)\] is banned/i;
-            if ($klined_ip) {
-                $h->push_write("IP ($klined_ip) is k-lined\n");
-                return $fail->();
-            }
-
-            # parse JSON response
-            my $info = JSON::XS->new->decode($body);
-            unless ($info) {
-                $h->push_write("Failed to parse JSON: $body\n");
-                return $fail->();
-            }
-
-            # should have session token
-            unless ($s) {
-                $s = $info->[1];
-                unless ($s) {
-                    $h->push_write("Fatal error: webchat client didn't get session token\n");
+                # need 2XX HTTP response
+                if ($hdr->{Status} !~ /^2/) {
+                    $h->push_write("Error: $hdr->{Status} $hdr->{Reason}\n");
                     return $fail->();
                 }
-            }
-        
-            if ($debug) {
-                #$h->push_write($body . "\n----\n");
-            }
 
-            # do next step
-            my $next_step = shift @steps;
-            if ($next_step) {
-                $post_req->($next_step);
-            } else {
-                # done, cleanup
-                $self->webchat_requests->{$id} = [];
-            }
-        });
+                unless ($body) {
+                    $h->push_write("Failed to get response body\n");
+                    return $fail->();
+                }
 
-        # save guard.
-        push @{$self->webchat_requests->{$id}}, $guard;
+                # klined? probably.
+                my ($klined_ip) = $body =~ /Your reported IP \[([\.\d\:]+)\] is banned/i;
+                if ($klined_ip) {
+                    $h->push_write("IP ($klined_ip) is k-lined\n");
+                    return $fail->();
+                }
 
-        return $guard;
+                # parse JSON response
+                my $info = JSON::XS->new->decode($body);
+                unless ($info) {
+                    $h->push_write("Failed to parse JSON: $body\n");
+                    return $fail->();
+                }
+
+                # should have session token
+                unless ($s) {
+                    $s = $info->[1];
+                    unless ($s) {
+                        $h->push_write("Fatal error: webchat client didn't get session token\n");
+                        return $fail->();
+                    }
+                }
+                
+                if ($debug) {
+                    #$h->push_write($body . "\n----\n");
+                }
+
+                # do next step
+                my $next_step = shift @steps;
+                if ($next_step) {
+                    $post_req->($next_step);
+                } else {
+                    # done, cleanup
+                    $http_proxy->in_use(0);
+                    $self->webchat_requests->{$id} = [];
+                }
+            });
+
+
+            # save guard.
+            push @{$self->webchat_requests->{$id}}, $guard;
+
+            return $guard;
+        };
+
+        # substitute random troll?
+        # if no message specified, pull one from troll_me or SMNS
+        if ($c && $c =~ /%%TROLL%%/) {
+            # do async request for troll text
+            my $troll_url = rand() < 0.5 ? 'http://rolloffle.churchburning.org/troll_me_text.php' :
+                'http://shitmyniggersays.com/random.php';
+
+            http_get $troll_url, sub {
+                my ($body, $hdr) = @_;
+
+                if ($hdr->{Status} !~ /^2/) {
+                    $h->push_write("Error fetching $troll_url: $hdr->{Status} $hdr->{Reason}\n");
+                    return $fail->();
+                }
+
+                $params{c} =~ s/%%TROLL%%/$body/sm;
+                return $do_post();
+            };
+        } else {
+            return $do_post->();
+        }
     };
 
     push @{$self->webchat_requests->{$id}}, $post_req->(shift @steps);
+
+    return 1;
 }
 
 1;

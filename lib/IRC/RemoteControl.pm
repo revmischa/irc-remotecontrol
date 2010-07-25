@@ -242,20 +242,16 @@ sub load_proxies {
 
     return unless @{$self->proxy_types};
 
-    my %opts;
-    if ($self->target_address) {
-        $opts{target_address} = $self->target_address;
-        $opts{target_port} = $self->target_port;
-    }
+    # need to copy attributes from Proxy::Consumer
+    # is there a better way to do this? probably
+    my $pp_attr = {};
+    $pp_attr->{$_} = $self->$_ for (qw/
+        target_address target_port debug fetch_socks_proxies
+        proxy_types use_proxy ipv6_prefixes ipv6_tunnel_count
+        fetch_http_proxies
+    /);
 
-    # FIXME: refactor this to pull attributes from Consumer and copy them
-    $opts{proxy_types} = $self->proxy_types;
-    $opts{fetch_http_proxies} = $self->fetch_http_proxies;
-
-    my $pp = IRC::RemoteControl::Proxy::Proxy->new(
-        %opts,
-        # ip_use_limit   => $self->ip_use_limit,
-    );
+    my $pp = IRC::RemoteControl::Proxy::Proxy->new(%$pp_attr);
     
     $pp->load_proxies;
     $self->proxy_proxy($pp);

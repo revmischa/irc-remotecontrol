@@ -165,6 +165,8 @@ sub fetch_proxies {
     }
 
     my $fetcher = WWW::FreeProxyListsCom->new;
+    print "Fetching proxies from freeproxylists.com...\n";
+
     my $fetch_type = lc $type;
     $fetch_type = 'standard' if lc $type eq 'http';
     my $proxies = $fetcher->get_list(type => lc $fetch_type, max_pages => 2);
@@ -430,16 +432,30 @@ sub spawn_tunnel {
         code          => sub {
             my $args = shift;
             my $comm_socket_fh = $args->{comm};
-            
+
             my $ok = $proxy->prepare;
             print(($ok ? "OK" : "FAILED") . "\n");
             
-            if ($ok) {
-                eval {                    
+            if ($ok && $comm_socket_fh) {
+                eval {
                     my $comm_socket = AnyEvent::Handle->new( fh => $comm_socket_fh );
                     $proxy->comm_handle_fh($comm_socket_fh);
                     $comm_socket_fh->autoflush;
                     
+                    # data read from tunnel
+                    $proxy->on_read(sub {
+                        my $line = shift;
+                        $comm_socket_fh->write($line);
+                    });
+
+                    $comm_socket->on_error(sub {
+                        my ($hdl, $fatal, $msg) = @_;
+                        warn "Child tunnel handler for $proxy lost communication socket with parent\n";
+                        $hdl->destroy;
+
+                        exit;
+                    });
+
                     if ($self->raw) {
                         my $nick = IRC::RemoteControl::Util->gen_nick;
                         my $user = IRC::RemoteControl::Util->gen_user;
@@ -448,17 +464,13 @@ sub spawn_tunnel {
                         $proxy->write("NICK $nick\r\n");
                         $proxy->write("USER $user $nick $nick :$real\r\n");
                     }
-                    
-                    # data read from tunnel
-                    $proxy->on_read(sub {
-                        my $line = shift;
-                        $comm_socket_fh->write($line);
-                    });
-                    
+
                     print "READY\n";
                     
-                    if (! $proxy->run($comm_socket_fh)) {  # blocks until completion
-                        print "ERROR\n";
+                    if (! eval { $proxy->run($comm_socket_fh) }) {  # blocks until completion
+                        my $errstr = "ERROR";
+                        $errstr .= ": $@" if $@;
+                        print "$errstr\n";
                     }
                 };  
                 
@@ -484,7 +496,8 @@ sub spawn_tunnel {
     
     $proc = $subproc->run;
     
-    $proxy->comm_handle($proc->delegate('comm')->handle);
+    my $comm_handle = $proc->delegate('comm')->handle;
+    $proxy->comm_handle($comm_handle);
     
     # handle sub-process errors
     $proc->delegate('stderr')->handle->on_read(sub {

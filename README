@@ -18,7 +18,6 @@ Usage:
 
   # load SOCKS proxies
   $ ./irc-remotecontrol.pl -t irc.efnet.net --fetch_socks_proxies
-k
 
   # create 20 ipv6 tunnels and only use them
   $ sudo ./irc-remotecontrol.pl 

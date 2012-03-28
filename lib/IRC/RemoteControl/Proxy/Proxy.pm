@@ -136,7 +136,12 @@ sub load_proxies {
         # make multiple connections
         for (1 .. $self->ip_use_limit) {
             # bring up proxy connection
-            $self->spawn_proxy_tunnel($proxy) or next;
+            if ($proxy->needs_tunnel) {
+                $self->spawn_proxy_tunnel($proxy) or next;
+            } else {
+                $proxy->prepare or next;
+            }
+
             push @{ $self->proxies }, $proxy;
         }
     }
@@ -149,7 +154,7 @@ sub refresh_proxies {
         next if $p->auth_failed || $p->connecting || ! $p->ok;
         
         if (! $p->ready) {
-            print "Refreshing " . $p->description . "\n";
+            #print "Refreshing " . $p->description . "\n";
             $p->reset;
             $self->spawn_proxy_tunnel($p);
         }
@@ -176,7 +181,7 @@ sub fetch_proxies {
     }
     
     my @ret;
-    my $load_count = 30;
+    my $load_count = 300;
     foreach my $proxy (@$proxies) {
         my $ip = $proxy->{ip} or next;
         next unless $ip =~ /^\d+\.\d+\.\d+\.\d+/;

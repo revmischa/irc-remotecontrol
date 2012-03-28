@@ -20,7 +20,7 @@ WriteMakefile(
         'AnyEvent::Subprocess' => 0,
         'Socket' => 0,
         'WWW::FreeProxyListsCom' => 0,
-        'IO::Socket::Socks' => 0,
+        'IO::Socket::Socks' => 0.62,
         'parent' => 0,
         'JSON::XS' => 0,
     },

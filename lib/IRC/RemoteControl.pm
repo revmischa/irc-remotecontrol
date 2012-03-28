@@ -423,7 +423,7 @@ sub handle_command {
             
                 foreach my $p (@proxies) {
                     my $active;
-                    $active = $p->ok && $p->ready ? "Active" : "Inactive";
+                    $active = $p->ok && $p->ready ? "Ready" : "Not ready";
                 
                     $oh->push_write("$active proxy: " . $p->description . "\n");
                 }
@@ -441,7 +441,15 @@ sub handle_command {
                 return $oh->push_write("No proxies available to write to.\n");
             }
         }
-        
+
+        when (/^refresh/) {
+            if ($self->proxy_proxy) {
+                $self->proxy_proxy->refresh_proxies;
+            } else {
+                return $oh->push_write("No proxies available to refresh.\n");
+            }
+        }
+
         default {
             break unless $cmd;
             

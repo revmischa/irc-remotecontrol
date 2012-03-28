@@ -126,18 +126,7 @@ sub start {
                 $self->cv->send if $self->cv;
             },
             on_read => sub {
-                $handle->push_read(
-                    line => sub {
-                        my (undef, $line) = @_;
-                        print " >> $line\n";
-                        eval {
-                            $self->handle_command($line);
-                        };
-                        if ($@) {
-                            $handle->push_write("Error executing command: $@");
-                        }
-                    },
-                );
+                $self->parse_command_input($handle);
             };
             
         $self->server_handle($handle);
@@ -160,6 +149,16 @@ sub start {
 
     # tells personalities to do their setup
     $self->setup;
+
+    # listen to stdin too
+    my $stdout_handle = new AnyEvent::Handle
+        fh => \*STDOUT;
+    my $w; $w = AnyEvent->io(fh => \*STDIN, poll => 'r', cb => sub {
+        chomp (my $input = <STDIN>);
+        $self->server_handle($stdout_handle);
+        $self->handle_command($input, $stdout_handle);
+    });
+    $self->stdin_watcher($w);
 }
 
 ### everything else below is internal, you should not need to use any of it
@@ -174,6 +173,11 @@ has clients => (
 
 # control socket handle
 has 'server_handle' => (
+    is => 'rw',
+    traits => [ 'NoGetopt' ],
+);
+
+has 'stdin_watcher' => (
     is => 'rw',
     traits => [ 'NoGetopt' ],
 );
@@ -236,6 +240,23 @@ has 'known_commands' => (
 );
 
 *h = \&server_handle;
+
+sub parse_command_input {
+    my ($self, $handle) = @_;
+    
+    $handle->push_read(
+        line => sub {
+            my (undef, $line) = @_;
+            print " >> $line\n";
+            eval {
+                $self->handle_command($line, $handle);
+            };
+            if ($@) {
+                $handle->push_write("Error executing command: $@");
+            }
+        },
+    );
+}
 
 sub load_proxies {
     my ($self) = @_;
@@ -370,9 +391,7 @@ sub slurp {
 }
 
 sub handle_command {
-    my ($self, $cmd) = @_;
-    
-    my $h = $self->h;
+    my ($self, $cmd, $oh) = @_;
     
     # strip whitespace
     $cmd =~ s/^(\s+)//;
@@ -389,13 +408,13 @@ sub handle_command {
 
     # found callback for command
     if ($cb) {
-        return $cb->($self, $h, $first_word, $args);
+        return $cb->($self, $oh, $first_word, $args);
     }
     
     given ($cmd) {
         when (/^stop/i) {
             $self->clients([]);
-            return $h->push_write("Dereferencing connection handles...\n");
+            return $oh->push_write("Dereferencing connection handles...\n");
         }
         
         when (/^list( all)?/i) {
@@ -406,12 +425,12 @@ sub handle_command {
                     my $active;
                     $active = $p->ok && $p->ready ? "Active" : "Inactive";
                 
-                    $h->push_write("$active proxy: " . $p->description . "\n");
+                    $oh->push_write("$active proxy: " . $p->description . "\n");
                 }
             }
 
             foreach my $ip (@{ $self->available_ips }) {
-                $h->push_write("Source IP $ip\n");
+                $oh->push_write("Source IP $ip\n");
             }
         }
         
@@ -419,14 +438,14 @@ sub handle_command {
             if ($self->proxy_proxy) {
                 $self->proxy_proxy->process_command_write($1);
             } else {
-                return $h->push_write("No proxies available to write to.\n");
+                return $oh->push_write("No proxies available to write to.\n");
             }
         }
         
         default {
             break unless $cmd;
             
-            return $h->push_write("Unknown command '$cmd'. " .
+            return $oh->push_write("Unknown command '$cmd'. " .
                 "Available commands: " . join(', ', @{$self->known_commands}) . "\n");
         }
     }

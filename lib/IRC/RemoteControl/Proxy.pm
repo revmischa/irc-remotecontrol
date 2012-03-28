@@ -182,7 +182,7 @@ sub run_select_loop {
                     print $_ foreach @lines;
                 }
             } elsif ($fh == $comm_sock) {
-                # data from poarent process we need to write to proxy
+                # data from parent process we need to write to proxy
                 my $buf;
                 if (my $r = $proxy_sock->read($buf, 512)) {
                     $comm_sock->write($buf);

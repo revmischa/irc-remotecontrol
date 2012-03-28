@@ -176,10 +176,12 @@ sub fetch_proxies {
     }
     
     my @ret;
+    my $load_count = 30;
     foreach my $proxy (@$proxies) {
         my $ip = $proxy->{ip} or next;
         next unless $ip =~ /^\d+\.\d+\.\d+\.\d+/;
         my $p = $self->create_proxy($type, $ip, $proxy->{port});
+        last if --$load_count == 0;
         push @ret, $p;
     }
 
